@@ -23,11 +23,15 @@
 
 //qCC_db
 #include "qCC_db.h"
+#include "ccAtomicBool.h"
 #include "ccSerializableObject.h"
 #include "ccColorScale.h"
 
 //System
 #include <assert.h>
+
+//Qt
+#include <QMutex>
 
 //! A scalar field associated to display-related parameters
 /** Extends the CCLib::ScalarField object.
@@ -78,7 +82,7 @@ public:
 		}
 
 		inline void setStart(ScalarType value) { m_start = inbound(value); if (m_stop < m_start) m_stop = m_start; updateRange(); }
-		inline void setStop(ScalarType value) { m_stop = inbound(value); if (m_stop < m_start) m_start = m_stop; updateRange(); }
+		inline void setStop (ScalarType value) { m_stop = inbound(value); if (m_stop < m_start) m_start = m_stop; updateRange(); }
 		
 		//! Returns the nearest inbound value
 		inline ScalarType inbound(ScalarType val) const { return (val < m_min ?  m_min : (val > m_max ? m_max : val)); }
@@ -90,7 +94,7 @@ public:
 	protected:
 
 		//! Updates actual range
-		inline void updateRange() { m_range = std::max(m_stop-m_start,(ScalarType)ZERO_TOLERANCE); }
+		inline void updateRange() { m_range = std::max(m_stop-m_start,static_cast<ScalarType>(ZERO_TOLERANCE)); }
 
 		ScalarType m_min;		/**< Minimum value **/
 		ScalarType m_start;		/**< Current start value (in [min,max]) **/
@@ -103,19 +107,19 @@ public:
 	/** Values outside of the [start;stop] intervale will either be grey
 		or invisible (see showNaNValuesInGrey).
 	**/
-	inline const Range& displayRange() const { return m_displayRange; }
+	Range displayRange() const;
 
 	//! Access to the range of saturation values
 	/** Relative color scales will only be applied to values inside the
 		[start;stop] intervale.
 	**/
-	inline const Range& saturationRange() const { return m_logScale ? m_logSaturationRange : m_saturationRange; }
+	Range saturationRange() const;
 
 	//! Access to the range of log scale saturation values
 	/** Relative color scales will only be applied to values inside the
 		[start;stop] intervale.
 	**/
-	inline const Range& logSaturationRange() const { return m_logSaturationRange; }
+	Range logSaturationRange() const;
 
 	//! Sets the minimum displayed value
 	void setMinDisplayed(ScalarType val);
@@ -208,6 +212,18 @@ public:
 	//! Imports the parameters from another scalar field
 	void importParametersFrom(const ccScalarField* sf);
 
+	//! Mutex holder (trick for const access to the mutex) 
+	struct MutexHolder { MutexHolder() : mutex(QMutex::Recursive) {}; QMutex mutex; };
+
+	//! Locks object (typically before display)
+	/** \warning unlock must be called afterwards!
+	**/
+	inline void lock() const { if (m_mutexHolder) m_mutexHolder->mutex.lock(); }
+	//! Unlocks object (typically before display)
+	/** \warning lock must have alerady been called!
+	**/
+	inline void unlock() const { if (m_mutexHolder) m_mutexHolder->mutex.unlock(); }
+
 	//inherited from ccSerializableObject
 	virtual bool isSerializable() const { return true; }
 	virtual bool toFile(QFile& out) const;
@@ -218,7 +234,7 @@ protected:
 	//! Default destructor
 	/** [SHAREABLE] Call 'release' to destroy this object properly.
 	**/
-	virtual ~ccScalarField() {};
+	virtual ~ccScalarField();
 
 	//! Updates saturation values
 	void updateSaturationBounds();
@@ -243,18 +259,18 @@ protected:
 	Range m_logSaturationRange;
 
 	// Whether NaN values are shown in grey or are hidden
-	bool m_showNaNValuesInGrey;
+	ccAtomicBool m_showNaNValuesInGrey;
 
 	//! Whether color scale is symmetrical or not
 	/** For relative color scales only.
 	**/
-	bool m_symmetricalScale;
+	ccAtomicBool m_symmetricalScale;
 
 	//! Whether scale is logarithmic or not
-	bool m_logScale;
+	ccAtomicBool m_logScale;
 
 	//! Whether 0 should always appear in associated color ramp
-	bool m_alwaysShowZero;
+	ccAtomicBool m_alwaysShowZero;
 
 	//! Active color ramp (for display)
 	ccColorScale::Shared m_colorScale;
@@ -269,7 +285,10 @@ protected:
 	/** Any modification to the scalar field values or parameters
 		will turn this flag on.
 	**/
-	bool m_modified;
+	ccAtomicBool m_modified;
+
+	//! For concurrent access
+	MutexHolder* m_mutexHolder;
 };
 
 #endif //CC_DB_SCALAR_FIELD_HEADER

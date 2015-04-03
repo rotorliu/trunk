@@ -43,7 +43,7 @@ ccPointPropertiesDlg::ccPointPropertiesDlg(QWidget* parent)
 	, m_pickingMode(POINT_INFO)
 {
 	setupUi(this);
-	setWindowFlags(Qt::FramelessWindowHint |Qt::Tool);
+	setWindowFlags(Qt::FramelessWindowHint | Qt::Tool);
 
 	connect(closeButton,				SIGNAL(clicked()), this, SLOT(onClose()));
 	connect(pointPropertiesButton,		SIGNAL(clicked()), this, SLOT(activatePointPropertiesDisplay()));
@@ -219,7 +219,7 @@ void ccPointPropertiesDlg::exportCurrentLabel()
 	if (m_pickingMode == RECT_ZONE)
 		labelObject = (m_rect2DLabel->isSelected() && m_rect2DLabel->isVisible() ? m_rect2DLabel : 0);
 	else
-		labelObject = (m_label && m_label->size()>0 ? m_label : 0);
+		labelObject = (m_label && m_label->size() > 0 ? m_label : 0);
 	if (!labelObject)
 		return;
 

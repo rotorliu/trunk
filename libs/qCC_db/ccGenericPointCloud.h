@@ -99,9 +99,10 @@ public:
 		WARNING: any previously attached octree will be deleted,
 				 even if new octree computation failed.
 		\param progressCb the caller can get some notification of the process progress through this callback mechanism (see CCLib documentation)
+		\param autoAddChild child will be automatically added to children list if true
 		\return the computed octree
 	**/
-	virtual ccOctree* computeOctree(CCLib::GenericProgressCallback* progressCb=NULL);
+	virtual ccOctree* computeOctree(CCLib::GenericProgressCallback* progressCb = NULL, bool autoAddChild = true);
 
 	//! Returns associated octree
 	virtual ccOctree* getOctree();
@@ -222,7 +223,7 @@ public:
 	/** Overrides default value one if superior than 0
 		(see glPointSize).
 	**/
-	void setPointSize(unsigned size = 0) { m_pointSize = static_cast<unsigned char>(size); }
+	void setPointSize(unsigned size = 0) { lock();  m_pointSize = std::min<unsigned char>(size, 255); unlock(); }
 
 	//! Returns current point size
 	/** 0 means that the cloud will use current OpenGL value

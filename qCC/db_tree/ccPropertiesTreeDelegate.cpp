@@ -180,6 +180,7 @@ void ccPropertiesTreeDelegate::fillModel(ccHObject* hObject)
 		return;
 
 	unbind();
+	hObject->lock();
 
 	m_currentObject = hObject;
 
@@ -288,6 +289,8 @@ void ccPropertiesTreeDelegate::fillModel(ccHObject* hObject)
 
 	if (m_model)
 		connect(m_model, SIGNAL(itemChanged(QStandardItem*)), this, SLOT(updateItem(QStandardItem*)));
+
+	hObject->unlock();
 }
 
 void ccPropertiesTreeDelegate::appendRow(QStandardItem* leftItem, QStandardItem* rightItem, bool openPersistentEditor/*=false*/)
@@ -1733,8 +1736,10 @@ void ccPropertiesTreeDelegate::scalarFieldChanged(int pos)
 	ccPointCloud* cloud = ccHObjectCaster::ToPointCloud(m_currentObject);
 	if (cloud && cloud->getCurrentDisplayedScalarFieldIndex()+1 != pos)
 	{
+		cloud->lock();
 		cloud->setCurrentDisplayedScalarField(pos-1);
-		cloud->showSF(pos>0);
+		cloud->showSF(pos > 0);
+		cloud->unlock();
 
 		updateDisplay();
 		//we must also reset the properties display!
@@ -1758,7 +1763,9 @@ void ccPropertiesTreeDelegate::spawnColorRampEditor()
 		{
 			if (editorDialog->getActiveScale())
 			{
+				cloud->lock();
 				sf->setColorScale(editorDialog->getActiveScale());
+				cloud->unlock();
 				updateDisplay();
 			}
 
@@ -1798,7 +1805,9 @@ void ccPropertiesTreeDelegate::colorScaleChanged(int pos)
 	ccScalarField* sf = cloud ? static_cast<ccScalarField*>(cloud->getCurrentDisplayedScalarField()) : 0;
 	if (sf && sf->getColorScale() != colorScale)
 	{
+		cloud->lock();
 		sf->setColorScale(colorScale);
+		cloud->unlock();
 		updateDisplay();
 		updateModel();
 	}
@@ -1814,7 +1823,9 @@ void ccPropertiesTreeDelegate::colorRampStepsChanged(int pos)
 	ccScalarField* sf = static_cast<ccScalarField*>(cloud->getCurrentDisplayedScalarField());
 	if (sf)
 	{
+		cloud->lock();
 		sf->setColorRampSteps(pos);
+		cloud->unlock();
 		updateDisplay();
 	}
 }

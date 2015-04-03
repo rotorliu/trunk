@@ -324,19 +324,20 @@ void ccHistogramWindow::refreshBars()
 		QVector<double> valueData(histoSize);
 		QVector<QColor> colors(histoSize);
 
+		m_associatedSF->lock();
 		for (int i=0; i<histoSize; ++i)
 		{
 			//we take the 'normalized' value at the middle of the class
 			double normVal = (static_cast<double>(i)+0.5) / histoSize;
-
 			keyData[i] = m_minVal + normVal * (m_maxVal - m_minVal);
 			valueData[i] = m_histoValues[i];
 
-			const colorType* col= m_associatedSF->getColor(static_cast<ScalarType>(keyData[i]));
+			const colorType* col = m_associatedSF->getColor(static_cast<ScalarType>(keyData[i]));
 			if (!col) //hidden values may have no associated color!
 				col = ccColor::lightGrey.rgba;
 			colors[i] = QColor(col[0],col[1],col[2]);
 		}
+		m_associatedSF->unlock();
 
 		m_histogram->setData(keyData, valueData, colors);
 
@@ -353,8 +354,9 @@ void ccHistogramWindow::refresh()
 	double maxVal = m_maxVal;
 	if (m_sfInteractionMode && m_associatedSF)
 	{
-		double minSat = m_associatedSF->saturationRange().min();
-		double maxSat = m_associatedSF->saturationRange().max();
+		ccScalarField::Range range = m_associatedSF->saturationRange();
+		double minSat = range.min();
+		double maxSat = range.max();
 		minVal = std::min(minVal,minSat);
 		maxVal = std::max(maxVal,maxSat);
 	}
@@ -518,7 +520,7 @@ void ccHistogramWindow::refresh()
 	//sf interaction mode
 	if (m_sfInteractionMode && m_associatedSF)
 	{
-		const ccScalarField::Range& dispRange = m_associatedSF->displayRange();
+		ccScalarField::Range dispRange = m_associatedSF->displayRange();
 
 		m_areaLeft = new QCPHiddenArea(true,xAxis, yAxis);
 		m_areaLeft->setRange(dispRange.min(),dispRange.max());
@@ -530,7 +532,7 @@ void ccHistogramWindow::refresh()
 		m_areaRight->setCurrentVal(dispRange.stop());
 		addPlottable(m_areaRight);
 
-		const ccScalarField::Range& satRange = m_associatedSF->saturationRange();
+		ccScalarField::Range satRange = m_associatedSF->saturationRange();
 
 		m_arrowLeft = new QCPArrow(xAxis, yAxis);
 		m_arrowLeft->setRange(satRange.min(),satRange.max());

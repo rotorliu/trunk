@@ -20,12 +20,16 @@
 //Local
 #include "ccGenericGLDisplay.h"
 
+//Qt
+#include <QMutexLocker>
+
 /******************************/
 /*      ccDrawableObject      */
 /******************************/
 
 ccDrawableObject::ccDrawableObject()
 	: m_currentDisplay(0)
+	, m_mutexHolder(new MutexHolder)
 {
 	setVisible(true);
 	setSelected(false);
@@ -52,7 +56,14 @@ ccDrawableObject::ccDrawableObject(const ccDrawableObject& object)
 	, m_glTransEnabled(object.m_glTransEnabled)
 	, m_showNameIn3D(object.m_showNameIn3D)
 	, m_currentDisplay(object.m_currentDisplay)
+	, m_mutexHolder(new MutexHolder)
 {
+}
+
+ccDrawableObject::~ccDrawableObject()
+{
+	if (m_mutexHolder)
+		delete m_mutexHolder;
 }
 
 void ccDrawableObject::redrawDisplay()
@@ -73,8 +84,16 @@ void ccDrawableObject::prepareDisplayForRefresh()
 		m_currentDisplay->toBeRefreshed();
 }
 
+ccGenericGLDisplay* ccDrawableObject::getDisplay() const
+{
+	QMutexLocker l(m_mutexHolder ? &(m_mutexHolder->mutex) : 0);
+	return m_currentDisplay;
+}
+
 void ccDrawableObject::setDisplay(ccGenericGLDisplay* win)
 {
+	QMutexLocker l(m_mutexHolder ? &(m_mutexHolder->mutex) : 0);
+
 	if (win && m_currentDisplay != win)
 		win->invalidateViewport();
 
@@ -83,36 +102,41 @@ void ccDrawableObject::setDisplay(ccGenericGLDisplay* win)
 
 void ccDrawableObject::removeFromDisplay(const ccGenericGLDisplay* win)
 {
-	if (m_currentDisplay == win)
+	if (getDisplay() == win)
 		setDisplay(0);
 }
 
 void ccDrawableObject::setGLTransformation(const ccGLMatrix& trans)
 {
+	QMutexLocker l(m_mutexHolder ? &(m_mutexHolder->mutex) : 0);
 	m_glTrans = trans;
 	enableGLTransformation(true);
 }
 
 void ccDrawableObject::rotateGL(const ccGLMatrix& rotMat)
 {
+	QMutexLocker l(m_mutexHolder ? &(m_mutexHolder->mutex) : 0);
 	m_glTrans = rotMat * m_glTrans;
 	enableGLTransformation(true);
 }
 
 void ccDrawableObject::translateGL(const CCVector3& trans)
 {
+	QMutexLocker l(m_mutexHolder ? &(m_mutexHolder->mutex) : 0);
 	m_glTrans += trans;
 	enableGLTransformation(true);
 }
 
 void ccDrawableObject::resetGLTransformation()
 {
+	QMutexLocker l(m_mutexHolder ? &(m_mutexHolder->mutex) : 0);
 	enableGLTransformation(false);
 	m_glTrans.toIdentity();
 }
 
 void ccDrawableObject::setTempColor(const ccColor::Rgb& col, bool autoActivate/*=true*/)
 {
+	QMutexLocker l(m_mutexHolder ? &(m_mutexHolder->mutex) : 0);
 	m_tempColor = col;
 
 	if (autoActivate)
@@ -121,6 +145,7 @@ void ccDrawableObject::setTempColor(const ccColor::Rgb& col, bool autoActivate/*
 
 void ccDrawableObject::getDrawingParameters(glDrawParams& params) const
 {
+	QMutexLocker l(m_mutexHolder ? &(m_mutexHolder->mutex) : 0);
 	//color override
 	if (isColorOverriden())
 	{
@@ -135,4 +160,19 @@ void ccDrawableObject::getDrawingParameters(glDrawParams& params) const
 		//colors are not displayed if scalar field is displayed
 		params.showColors = !params.showSF && hasColors() && colorsShown();
 	}
+}
+
+void ccDrawableObject::getTempColor(ccColor::Rgb& col) const
+{
+	if (m_mutexHolder)
+		m_mutexHolder->mutex.lock();
+	col = m_tempColor;
+	if (m_mutexHolder)
+		m_mutexHolder->mutex.unlock();
+}
+
+ccGLMatrix ccDrawableObject::getGLTransformation() const
+{
+	QMutexLocker l(m_mutexHolder ? &(m_mutexHolder->mutex) : 0);
+	return m_glTrans;
 }

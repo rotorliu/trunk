@@ -267,6 +267,7 @@ void ccDBRoot::removeElement(ccHObject* anObject)
 	}
 
 	int childPos = parent->getChildIndex(anObject);
+	parent->lock();
 	assert(childPos >= 0);
 	{
 		//row removal operation (start)
@@ -277,6 +278,7 @@ void ccDBRoot::removeElement(ccHObject* anObject)
 		//row removal operation (end)
 		endRemoveRows();
 	}
+	parent->unlock();
 
 	//we restore properties view
 	updatePropertiesView();
@@ -636,7 +638,8 @@ void ccDBRoot::changeSelection(const QItemSelection & selected, const QItemSelec
 			if (element)
 			{
 				element->setSelected(false);
-				element->prepareDisplayForRefresh();
+				if (element->isEnabled())
+					element->prepareDisplayForRefresh();
 			}
 		}
 	}
@@ -651,7 +654,8 @@ void ccDBRoot::changeSelection(const QItemSelection & selected, const QItemSelec
 			if (element)
 			{
 				element->setSelected(true);
-				element->prepareDisplayForRefresh();
+				if (element->isEnabled())
+					element->prepareDisplayForRefresh();
 			}
 		}
 	}

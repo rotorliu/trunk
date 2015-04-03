@@ -468,7 +468,7 @@ void ccMesh::setMaterialSet(ccMaterialSet* materialSet, bool autoReleaseOldMater
 	}
 
 	//update display (for textures!)
-	setDisplay(m_currentDisplay);
+	setDisplay(getDisplay());
 }
 
 void ccMesh::applyGLTransformation(const ccGLMatrix& trans)

@@ -58,6 +58,7 @@
 
 //Qt
 #include <QIcon>
+#include <QMutexLocker>
 
 ccHObject::ccHObject(QString name/*=QString()*/)
 	: ccObject(name)
@@ -99,12 +100,22 @@ ccHObject::~ccHObject()
 		//delete other object?
 		if ((it->second & DP_DELETE_OTHER) == DP_DELETE_OTHER)
 		{
-			it->first->removeDependencyFlag(this,DP_NOTIFY_OTHER_ON_DELETE); //in order to avoid any loop!
+			it->first->removeDependencyFlag(this, DP_NOTIFY_OTHER_ON_DELETE); //in order to avoid any loop!
+
 			//delete object
 			if (it->first->isShareable())
+			{
 				dynamic_cast<CCShareable*>(it->first)->release();
+			}
 			else
+			{
+				it->first->lock();
+				//be sure not to display it (pontentially in a separate thread)
+				//as we are going to delete it!
+				it->first->setEnabled(false);
+				it->first->unlock();
 				delete it->first;
+			}
 		}
 	}
 	m_dependencies.clear();
@@ -115,8 +126,9 @@ ccHObject::~ccHObject()
 void ccHObject::notifyGeometryUpdate()
 {
 	//the associated display bounding-box is (potentially) deprecated!!!
-	if (m_currentDisplay)
-		m_currentDisplay->invalidateViewport();
+	ccGenericGLDisplay* display = getDisplay();
+	if (display)
+		display->invalidateViewport();
 
 	//process dependencies
 	for (std::map<ccHObject*,int>::const_iterator it=m_dependencies.begin(); it!=m_dependencies.end(); ++it)
@@ -318,7 +330,9 @@ void ccHObject::onDeletionOf(const ccHObject* obj)
 	if (pos >= 0)
 	{
 		//we can't swap children as we want to keep the order!
-		m_children.erase(m_children.begin()+pos);
+		lock();
+		m_children.erase(m_children.begin() + pos);
+		unlock();
 	}
 }
 
@@ -344,10 +358,12 @@ bool ccHObject::addChild(ccHObject* child, int dependencyFlags/*=DP_PARENT_OF_OT
 	//insert child
 	try
 	{
+		lock();
 		if (insertIndex < 0 || static_cast<size_t>(insertIndex) >= m_children.size())
 			m_children.push_back(child);
 		else
 			m_children.insert(m_children.begin()+insertIndex,child);
+		unlock();
 	}
 	catch (std::bad_alloc)
 	{
@@ -464,7 +480,9 @@ void ccHObject::transferChildren(ccHObject& newParent, bool forceFatherDependent
 		//after a successful transfer, either the parent is 'newParent' or a null pointer
 		assert(child->getParent() == &newParent || child->getParent() == 0);
 	}
+	lock();
 	m_children.clear();
+	unlock();
 }
 
 void ccHObject::swapChildren(unsigned firstChildIndex, unsigned secondChildIndex)
@@ -472,7 +490,9 @@ void ccHObject::swapChildren(unsigned firstChildIndex, unsigned secondChildIndex
 	assert(firstChildIndex < m_children.size());
 	assert(secondChildIndex < m_children.size());
 
-	std::swap(m_children[firstChildIndex],m_children[secondChildIndex]);
+	lock();
+	std::swap(m_children[firstChildIndex], m_children[secondChildIndex]);
+	unlock();
 }
 
 int ccHObject::getIndex() const
@@ -535,7 +555,7 @@ ccBBox ccHObject::getDisplayBB_recursive(bool relative, const ccGenericGLDisplay
 {
 	ccBBox box;
 
-	if (!display || display == m_currentDisplay)
+	if (!display || display == getDisplay())
 		box = getOwnBB(true);
 
 	for (Container::iterator it = m_children.begin(); it != m_children.end(); ++it)
@@ -583,7 +603,7 @@ void ccHObject::drawBB(const ccColor::Rgb& col)
 	switch (m_selectionBehavior)
 	{
 	case SELECTION_AA_BBOX:
-		getDisplayBB_recursive(true,m_currentDisplay).draw(col);
+		getDisplayBB_recursive(true,getDisplay()).draw(col);
 		break;
 	
 	case SELECTION_FIT_BBOX:
@@ -646,13 +666,19 @@ void ccHObject::drawNameIn3D(CC_DRAW_CONTEXT& context)
 void ccHObject::draw(CC_DRAW_CONTEXT& context)
 {
 	if (!isEnabled())
+	{
 		return;
+	}
 
 	//are we currently drawing objects in 2D or 3D?
 	bool draw3D = MACRO_Draw3D(context);
+
+	bool visible = m_visible;
+	bool selected = m_selected;
+	bool glTransEnabled = m_glTransEnabled;
 	
 	//the entity must be either visible and selected, and of course it should be displayed in this context
-	bool drawInThisContext = ((m_visible || m_selected) && m_currentDisplay == context._win);
+	bool drawInThisContext = ((visible || selected) && getDisplay() == context._win);
 
 	//no need to display anything but clouds and meshes in "element picking mode"
 	drawInThisContext &= (	( !MACRO_DrawPointNames(context)	|| isKindOf(CC_TYPES::POINT_CLOUD) ) || 
@@ -661,11 +687,11 @@ void ccHObject::draw(CC_DRAW_CONTEXT& context)
 	if (draw3D)
 	{
 		//apply 3D 'temporary' transformation (for display only)
-		if (m_glTransEnabled)
+		if (glTransEnabled)
 		{
 			glMatrixMode(GL_MODELVIEW);
 			glPushMatrix();
-			glMultMatrixf(m_glTrans.data());
+			glMultMatrixf(getGLTransformation().data());
 		}
 
 		if (	context.decimateCloudOnMove						//LOD for clouds is enabled?
@@ -696,15 +722,19 @@ void ccHObject::draw(CC_DRAW_CONTEXT& context)
 
 	//draw entity's children
 	for (Container::iterator it = m_children.begin(); it != m_children.end(); ++it)
+	{
+		(*it)->lock();
 		(*it)->draw(context);
+		(*it)->unlock();
+	}
 
 	//if the entity is currently selected, we draw its bounding-box
-	if (m_selected && draw3D && drawInThisContext && !MACRO_DrawNames(context) && context.currentLODLevel == 0)
+	if (selected && draw3D && drawInThisContext && !MACRO_DrawNames(context) && context.currentLODLevel == 0)
 	{
 		drawBB(context.bbDefaultCol);
 	}
 
-	if (draw3D && m_glTransEnabled)
+	if (draw3D && glTransEnabled)
 		glPopMatrix();
 }
 
@@ -723,11 +753,11 @@ void ccHObject::applyGLTransformation_recursive(ccGLMatrix* trans/*=NULL*/)
 		{
 			//if no transformation is provided (by father)
 			//we initiate it with the current one
-			trans = _trans = new ccGLMatrix(m_glTrans);
+			trans = _trans = new ccGLMatrix(getGLTransformation());
 		}
 		else
 		{
-			*trans *= m_glTrans;
+			*trans *= getGLTransformation();
 		}
 	}
 
@@ -737,8 +767,10 @@ void ccHObject::applyGLTransformation_recursive(ccGLMatrix* trans/*=NULL*/)
 		notifyGeometryUpdate();
 	}
 
-	for (Container::iterator it = m_children.begin(); it!=m_children.end(); ++it)
+	lock();
+	for (Container::iterator it = m_children.begin(); it != m_children.end(); ++it)
 		(*it)->applyGLTransformation_recursive(trans);
+	unlock();
 
 	if (_trans)
 		delete _trans;
@@ -780,7 +812,9 @@ void ccHObject::detachChild(ccHObject* child)
 	if (pos >= 0)
 	{
 		//we can't swap children as we want to keep the order!
-		m_children.erase(m_children.begin()+pos);
+		lock();
+		m_children.erase(m_children.begin() + pos);
+		unlock();
 	}
 }
 
@@ -797,7 +831,9 @@ void ccHObject::detatchAllChildren()
 		if (child->getParent() == this)
 			child->setParent(0);
 	}
+	lock();
 	m_children.clear();
+	unlock();
 }
 
 void ccHObject::removeChild(ccHObject* child)
@@ -820,7 +856,9 @@ void ccHObject::removeChild(int pos)
 	//we can't swap as we want to keep the order!
 	//(DGM: do this BEFORE deleting the object (otherwise
 	//the dependency mechanism can 'backfire' ;)
-	m_children.erase(m_children.begin()+pos);
+	child->lock();
+	m_children.erase(m_children.begin() + pos);
+	child->unlock();
 
 	//backup dependency flags
 	int flags = getDependencyFlagsWith(child);
@@ -833,9 +871,16 @@ void ccHObject::removeChild(int pos)
 	{
 		//delete object
 		if (child->isShareable())
+		{
 			dynamic_cast<CCShareable*>(child)->release();
+		}
 		else/* if (!child->isA(CC_TYPES::POINT_OCTREE))*/
+		{
+			child->lock();
+			child->setEnabled(false);
+			child->unlock();
 			delete child;
+		}
 	}
 	else if (child->getParent() == this)
 	{
@@ -845,6 +890,7 @@ void ccHObject::removeChild(int pos)
 
 void ccHObject::removeAllChildren()
 {
+	lock();
 	while (!m_children.empty())
 	{
 		ccHObject* child = m_children.back();
@@ -854,11 +900,20 @@ void ccHObject::removeAllChildren()
 		if ((flags & DP_DELETE_OTHER) == DP_DELETE_OTHER)
 		{
 			if (child->isShareable())
+			{
 				dynamic_cast<CCShareable*>(child)->release();
+			}
 			else
+			{
+				//just to be sure
+				child->lock();
+				child->setEnabled(false);
+				child->unlock();
 				delete child;
+			}
 		}
 	}
+	unlock();
 }
 
 bool ccHObject::isSerializable() const
@@ -1002,6 +1057,8 @@ bool ccHObject::fromFile(QFile& in, short dataVersion, int flags, bool omitChild
 
 bool ccHObject::toFile_MeOnly(QFile& out) const
 {
+	QMutexLocker l(m_mutexHolder ? &(m_mutexHolder->mutex) : 0);
+
 	assert(out.isOpen() && (out.openMode() & QIODevice::WriteOnly));
 
 	/*** ccHObject takes in charge the ccDrawableObject properties (which is not a ccSerializableObject) ***/
@@ -1046,6 +1103,8 @@ bool ccHObject::toFile_MeOnly(QFile& out) const
 
 bool ccHObject::fromFile_MeOnly(QFile& in, short dataVersion, int flags)
 {
+	QMutexLocker l(m_mutexHolder ? &(m_mutexHolder->mutex) : 0);
+
 	assert(in.isOpen() && (in.openMode() & QIODevice::ReadOnly));
 
 	/*** ccHObject takes in charge the ccDrawableObject properties (which is not a ccSerializableObject) ***/

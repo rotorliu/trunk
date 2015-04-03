@@ -36,10 +36,10 @@
 #include <QFont>
 #include <QMap>
 #include <QElapsedTimer>
-//#define THREADED_GL_WIDGET
+#include <QMutex>
+#define THREADED_GL_WIDGET
 #ifdef THREADED_GL_WIDGET
 #include <QThread>
-#include <QMutex>
 #include <QWaitCondition>
 #include <QAtomicInt>
 #endif
@@ -613,6 +613,25 @@ signals:
 
 protected:
 
+	//! Frame Rate Test structure
+	struct FrameRateTestStruct
+	{
+		FrameRateTestStruct()
+			: inProgress(false)
+			, elapsedTime_ms(0) //i.e. not initialized
+			, currentFrame(0)
+		{}
+
+		bool inProgress;
+		ccGLMatrixd backupMat;
+		QElapsedTimer timer;
+		qint64 elapsedTime_ms;
+		unsigned currentFrame;
+	};
+	
+	//! Frame rate test parameters
+	FrameRateTestStruct m_frameRateTest;
+
 	//! Processes the clickable items
 	/** \return true if an item has been clicked
 	**/
@@ -669,7 +688,6 @@ protected:
 	friend RenderingThread;
 
 	RenderingThread* m_renderingThread;
-	QMutex m_mutex;
 	QGLFormat m_format;
 	const QGLWidget* m_shareWidget; 
 	QAtomicInt m_resized;
@@ -778,7 +796,7 @@ protected:
 	void drawClickableItems(int xStart, int& yStart);
 
 	//! Disables LOD rendering
-	void disableLOD();
+	void disableLOD(bool threadSafe = true);
 
 	// Releases all textures, GL lists, etc.
 	void uninitializeGL();
@@ -1004,6 +1022,9 @@ protected:
 	bool m_LODPendingRefresh;
 	//! LOD refresh signal should be ignored
 	bool m_LODPendingIgnore;
+
+	//! For concurrent access
+	QMutex m_mutex;
 
 	//! Internal timer
 	QElapsedTimer m_timer;

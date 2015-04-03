@@ -3498,17 +3498,18 @@ void MainWindow::doActionFilterByValue()
 			ccScalarField* sf = toFilter[i].second->getCurrentDisplayedScalarField();
 			assert(sf);
 
+			ccScalarField::Range dispRange = sf->displayRange();
 			if (i == 0)
 			{
-				minVald = static_cast<double>(sf->displayRange().start());
-				maxVald = static_cast<double>(sf->displayRange().stop());
+				minVald = static_cast<double>(dispRange.start());
+				maxVald = static_cast<double>(dispRange.stop());
 			}
 			else
 			{
-				if (minVald > static_cast<double>(sf->displayRange().start()))
-					minVald = static_cast<double>(sf->displayRange().start());
-				if (maxVald < static_cast<double>(sf->displayRange().stop()))
-					maxVald = static_cast<double>(sf->displayRange().stop());
+				if (minVald > static_cast<double>(dispRange.start()))
+					minVald = static_cast<double>(dispRange.start());
+				if (maxVald < static_cast<double>(dispRange.stop()))
+					maxVald = static_cast<double>(dispRange.stop());
 			}
 		}
 	}

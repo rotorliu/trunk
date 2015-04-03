@@ -190,44 +190,47 @@ void ccRenderingTools::DrawColorRamp(const ccScalarField* sf, ccGLWindow* win, i
 	bool symmetricalScale = sf->symmetricalScale();
 	bool alwaysShowZero = sf->isZeroAlwaysShown();
 	
+	ccScalarField::Range displayRange = sf->displayRange();
+	ccScalarField::Range saturationRange = sf->saturationRange();
+
 	//set of particular values
 	//DGM: we work with doubles for maximum accuracy
 	std::set<double> keyValues;
 	if (!logScale)
 	{
-		keyValues.insert(sf->displayRange().min());
-		keyValues.insert(sf->displayRange().start());
-		keyValues.insert(sf->displayRange().stop());
-		keyValues.insert(sf->displayRange().max());
-		keyValues.insert(sf->saturationRange().min());
-		keyValues.insert(sf->saturationRange().start());
-		keyValues.insert(sf->saturationRange().stop());
-		keyValues.insert(sf->saturationRange().max());
+		keyValues.insert(displayRange.min());
+		keyValues.insert(displayRange.start());
+		keyValues.insert(displayRange.stop());
+		keyValues.insert(displayRange.max());
+		keyValues.insert(saturationRange.min());
+		keyValues.insert(saturationRange.start());
+		keyValues.insert(saturationRange.stop());
+		keyValues.insert(saturationRange.max());
 
 		if (symmetricalScale)
-			keyValues.insert(-sf->saturationRange().max());
+			keyValues.insert(-saturationRange.max());
 
 		if (alwaysShowZero)
 			keyValues.insert(0.0);
 	}
 	else
 	{
-		ScalarType minDisp = sf->displayRange().min();
-		ScalarType maxDisp = sf->displayRange().max();
+		ScalarType minDisp = displayRange.min();
+		ScalarType maxDisp = displayRange.max();
 		ConvertToLogScale(minDisp,maxDisp);
 		keyValues.insert(minDisp);
 		keyValues.insert(maxDisp);
 
-		ScalarType startDisp = sf->displayRange().start();
-		ScalarType stopDisp = sf->displayRange().stop();
+		ScalarType startDisp = displayRange.start();
+		ScalarType stopDisp  = displayRange.stop();
 		ConvertToLogScale(startDisp,stopDisp);
 		keyValues.insert(startDisp);
 		keyValues.insert(stopDisp);
 
-		keyValues.insert(sf->saturationRange().min());
-		keyValues.insert(sf->saturationRange().start());
-		keyValues.insert(sf->saturationRange().stop());
-		keyValues.insert(sf->saturationRange().max());
+		keyValues.insert(saturationRange.min());
+		keyValues.insert(saturationRange.start());
+		keyValues.insert(saturationRange.stop());
+		keyValues.insert(saturationRange.max());
 	}
 
 	//magic fix (for infinite values!)
@@ -259,9 +262,10 @@ void ccRenderingTools::DrawColorRamp(const ccScalarField* sf, ccGLWindow* win, i
 		//remove 'hidden' values
 		if (!logScale)
 		{
+			ccScalarField::Range displayRange = sf->displayRange();
 			for (std::set<double>::iterator it = keyValues.begin(); it != keyValues.end(); )
 			{
-				if (!sf->displayRange().isInRange(static_cast<ScalarType>(*it)) && (!alwaysShowZero || *it != 0)) //we keep zero if the user has explicitely asked for it!
+				if (!displayRange.isInRange(static_cast<ScalarType>(*it)) && (!alwaysShowZero || *it != 0)) //we keep zero if the user has explicitely asked for it!
 				{
 					std::set<double>::iterator toDelete = it;
 					++it;
@@ -277,8 +281,9 @@ void ccRenderingTools::DrawColorRamp(const ccScalarField* sf, ccGLWindow* win, i
 		{
 			//convert actual display range to log scale
 			//(we can't do the opposite, otherwise we get accuracy/round-off issues!)
-			ScalarType dispMin = sf->displayRange().start();
-			ScalarType dispMax = sf->displayRange().stop();
+			ccScalarField::Range displayRange = sf->displayRange();
+			ScalarType dispMin = displayRange.start();
+			ScalarType dispMax = displayRange.stop();
 			ConvertToLogScale(dispMin,dispMax);
 
 			for (std::set<double>::iterator it = keyValues.begin(); it != keyValues.end(); )
@@ -335,6 +340,7 @@ void ccRenderingTools::DrawColorRamp(const ccScalarField* sf, ccGLWindow* win, i
 		if (keyValues.size() > 1)
 		{
 			int histoStart = x+scaleWidth+std::min(std::max(scaleWidth/8,3),static_cast<int>(15 * renderZoom));
+			ccScalarField::Range displayRange = sf->displayRange();
 
 			glLineWidth(1.0f * renderZoom);
 			glBegin(GL_LINES);

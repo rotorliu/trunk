@@ -330,7 +330,7 @@ bool ccClipBox::move2D(int x, int y, int dx, int dy, int screenWidth, int screen
 	transMat.setTranslation(transMat.getTranslationAsVec3D() + CCVector3d::fromArray(C.u));
 
 	//rotateGL(transMat);
-	m_glTrans = ccGLMatrix(transMat.inverse().data()) * m_glTrans;
+	setGLTransformation(ccGLMatrix(transMat.inverse().data()) * getGLTransformation());
 	enableGLTransformation(true);
 
 	m_lastOrientation = currentOrientation;
@@ -357,7 +357,7 @@ bool ccClipBox::move3D(const CCVector3d& uInput)
 	if (m_activeComponent >= X_MINUS_ARROW && m_activeComponent <= CROSS)
 	{
 		if (m_glTransEnabled)
-			m_glTrans.inverse().applyRotation(u);
+			getGLTransformation().inverse().applyRotation(u);
 
 		switch(m_activeComponent)
 		{
@@ -439,7 +439,7 @@ bool ccClipBox::move3D(const CCVector3d& uInput)
 		
 		CCVector3d R = Rb;
 		if (m_glTransEnabled)
-			m_glTrans.applyRotation(R);
+			getGLTransformation().applyRotation(R);
 
 		CCVector3d RxU = R.cross(u);
 
@@ -470,7 +470,7 @@ bool ccClipBox::move3D(const CCVector3d& uInput)
 		transMat = rotMat * transMat;
 		transMat.setTranslation(transMat.getTranslationAsVec3D() + CCVector3d::fromArray(C.u));
 
-		m_glTrans = m_glTrans * ccGLMatrix(transMat.inverse().data());
+		setGLTransformation(getGLTransformation() * ccGLMatrix(transMat.inverse().data()));
 		enableGLTransformation(true);
 	}
 	else
@@ -522,7 +522,7 @@ void ccClipBox::update(bool shrink/*=false*/)
 
 	if (m_glTransEnabled)
 	{
-		ccGLMatrix transMat = m_glTrans.inverse();
+		ccGLMatrix transMat = getGLTransformation().inverse();
 
 		for (unsigned i=0; i<count; ++i)
 		{

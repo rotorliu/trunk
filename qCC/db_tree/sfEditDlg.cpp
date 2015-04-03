@@ -124,8 +124,8 @@ void sfEditDlg::fillDialogWith(ccScalarField* sf)
 
 	//displayed and saturation values
 	{
-		const ccScalarField::Range& displayRange = sf->displayRange();
-		const ccScalarField::Range& saturationRange = sf->saturationRange();
+		ccScalarField::Range displayRange = sf->displayRange();
+		ccScalarField::Range saturationRange = sf->saturationRange();
 
 		//special case: no need to actiate this widget for flat scalar field
 		//(worse, divisions by zero may occur!)

@@ -90,6 +90,10 @@ const GLuint GL_INVALID_LIST_ID = (~0);
 //GL filter banner margin (height = 2*margin + current font height)
 const int CC_GL_FILTER_BANNER_MARGIN = 5;
 
+//Framerate test
+static const qint64 FRAMERATE_TEST_MIN_DURATION_MSEC = 10000;
+static const unsigned FRAMERATE_TEST_MIN_FRAMES = 50;
+
 /*** Persistent settings ***/
 
 static const char c_ps_groupName[]			= "ccGLWindow";
@@ -832,29 +836,17 @@ void ccGLWindow::resizeGL2()
 #endif
 }
 
-//Framerate test
-static const qint64 FRAMERATE_TEST_DURATION_MSEC = 10000;
-static const unsigned FRAMERATE_TEST_MIN_FRAMES = 50;
-static bool s_frameRateTestInProgress = false;
-static ccGLMatrixd s_frameRateBackupMat;
-static QTimer s_frameRateTimer;
-static QElapsedTimer s_frameRateElapsedTimer;
-static qint64 s_frameRateElapsedTime_ms = 0; //i.e. not initialized
-static unsigned s_frameRateCurrentFrame = 0;
-
 void ccGLWindow::startFrameRateTest()
 {
-	if (s_frameRateTestInProgress)
+	if (m_frameRateTest.inProgress)
 	{
 		ccLog::Error("Framerate test already in progress!");
 		return;
 	}
-	s_frameRateTestInProgress = true;
+	m_frameRateTest.inProgress = true;
 
 	//we save the current view matrix
-	s_frameRateBackupMat = m_viewportParams.viewMat;
-
-	connect(&s_frameRateTimer, SIGNAL(timeout()), this, SLOT(redraw()), Qt::QueuedConnection);
+	m_frameRateTest.backupMat = m_viewportParams.viewMat;
 
 	displayNewMessage("[Framerate test in progress]",
 						ccGLWindow::UPPER_CENTER_MESSAGE,
@@ -864,29 +856,28 @@ void ccGLWindow::startFrameRateTest()
 	disableLOD();
 
 	//let's start
-	s_frameRateCurrentFrame = 0;
-	s_frameRateElapsedTime_ms = 0;
-	s_frameRateElapsedTimer.start();
-	s_frameRateTimer.start(0);
+	m_frameRateTest.currentFrame = 0;
+	m_frameRateTest.elapsedTime_ms = 0;
+	m_frameRateTest.timer.restart();
+
+#ifdef THREADED_GL_WIDGET
+	redraw();
+#else
+	QTimer::singleShot(0, this, SLOT(redraw()));
+#endif
 };
 
 void ccGLWindow::stopFrameRateTest()
 {
-	if (s_frameRateTestInProgress)
-	{
-		s_frameRateTimer.stop();
-		s_frameRateTimer.disconnect();
-	}
-	s_frameRateTestInProgress = false;
+	m_frameRateTest.inProgress = false;
 
 	//we restore the original view mat
-	m_viewportParams.viewMat = s_frameRateBackupMat;
-	invalidateVisualization();
+	setBaseViewMat(m_frameRateTest.backupMat);
 
 	displayNewMessage(QString(),ccGLWindow::UPPER_CENTER_MESSAGE); //clear message in the upper center area
-	if (s_frameRateElapsedTime_ms > 0)
+	if (m_frameRateTest.elapsedTime_ms > 0)
 	{
-		QString message = QString("Framerate: %1 fps").arg((s_frameRateCurrentFrame*1.0e3)/s_frameRateElapsedTime_ms,0,'f',3);
+		QString message = QString("Framerate: %1 fps").arg((m_frameRateTest.currentFrame*1.0e3) / m_frameRateTest.elapsedTime_ms, 0, 'f', 3);
 		displayNewMessage(message,ccGLWindow::LOWER_LEFT_MESSAGE,true);
 		ccLog::Print(message);
 	}
@@ -1083,14 +1074,18 @@ void ccGLWindow::refresh(bool only2D/*=false*/)
 
 void ccGLWindow::redraw(bool only2D/*=false*/)
 {
+	m_mutex.lock();
 	if (m_LODInProgress)
 	{
 		//reset current LOD cycle
+#ifndef THREADED_GL_WIDGET
 		m_LODPendingIgnore = true;
 		m_LODPendingRefresh = false;
-		disableLOD();
+#endif
+		disableLOD(false);
 	}
-	
+	m_mutex.unlock();
+
 	if (!only2D)
 		m_updateFBO = true;
 
@@ -1133,7 +1128,7 @@ void ccGLWindow::paint()
 						||	m_captureMode.enabled
 						||	m_LODInProgress )
 					);
-	ccLog::PrintDebug(QString("[QPaintGL] New pass (3D = %1 / LOD in progress = %2)").arg(doDraw3D ? "yes" : "no").arg(m_LODInProgress ? "yes" : "no"));
+	//ccLog::PrintDebug(QString("[QPaintGL] New pass (3D = %1 / LOD in progress = %2)").arg(doDraw3D ? "yes" : "no").arg(m_LODInProgress ? "yes" : "no"));
 
 	//we update font size (for text display)
 	setFontPointSize(getFontPointSize());
@@ -1196,14 +1191,14 @@ void ccGLWindow::paint()
 			if (!m_captureMode.enabled)
 			{
 				screenTex = m_activeGLFilter->getTexture();
-				ccLog::PrintDebug(QString("[QPaintGL] Will use the shader output texture (tex ID = %1)").arg(screenTex));
+				//ccLog::PrintDebug(QString("[QPaintGL] Will use the shader output texture (tex ID = %1)").arg(screenTex));
 			}
 		}
 		else if (!m_captureMode.enabled)
 		{
 			//screenTex = m_fbo->getDepthTexture();
 			screenTex = m_fbo->getColorTexture(0);
-			ccLog::PrintDebug(QString("[QPaintGL] Will use the standard FBO (tex ID = %1)").arg(screenTex));
+			//ccLog::PrintDebug(QString("[QPaintGL] Will use the standard FBO (tex ID = %1)").arg(screenTex));
 		}
 	}
 
@@ -1386,12 +1381,16 @@ void ccGLWindow::paint()
 	m_shouldBeRefreshed = false;
 
 	//For frame rate test
-	if (s_frameRateTestInProgress)
+	if (m_frameRateTest.inProgress)
 	{
-		s_frameRateElapsedTime_ms = s_frameRateElapsedTimer.elapsed();
-		if (++s_frameRateCurrentFrame > FRAMERATE_TEST_MIN_FRAMES && s_frameRateElapsedTime_ms > FRAMERATE_TEST_DURATION_MSEC)
+		m_frameRateTest.elapsedTime_ms = m_frameRateTest.timer.elapsed();
+		if (++m_frameRateTest.currentFrame > FRAMERATE_TEST_MIN_FRAMES && m_frameRateTest.elapsedTime_ms > FRAMERATE_TEST_MIN_DURATION_MSEC)
 		{
+#ifdef THREADED_GL_WIDGET
+			stopFrameRateTest();
+#else
 			QTimer::singleShot(0, this, SLOT(stopFrameRateTest()));
+#endif
 		}
 		else
 		{
@@ -1403,11 +1402,17 @@ void ccGLWindow::paint()
 			glGetDoublev(GL_MODELVIEW_MATRIX, m_viewportParams.viewMat.data());
 			invalidateVisualization();
 			glPopMatrix();
+#ifdef THREADED_GL_WIDGET
+			redraw();
+#else
+			QTimer::singleShot(0, this, SLOT(redraw()));
+#endif
 		}
 	}
 	else
 	{
 		//should we render a new LOD level?
+		m_mutex.lock();
 		if (m_LODInProgress)
 		{
 			if ((!m_LODPendingRefresh || m_LODPendingIgnore) && !m_mouseMoved && !m_mouseButtonPressed)
@@ -1425,26 +1430,50 @@ void ccGLWindow::paint()
 				m_LODPendingRefresh = true;
 				m_LODPendingIgnore = false;
 
-				ccLog::PrintDebug(QString("[QPaintGL] New LOD pass scheduled with timer"));
-				QTimer::singleShot(std::max<int>(baseLODRefreshTime_ms-displayTime_ms,0), this, SLOT(renderNextLODLevel()));
+				m_mutex.unlock();
+
+				//ccLog::PrintDebug(QString("[QPaintGL] New LOD pass scheduled with timer"));
+#ifdef THREADED_GL_WIDGET
+				renderNextLODLevel();
+#else
+				QTimer::singleShot(std::max<int>(baseLODRefreshTime_ms - displayTime_ms, 0), this, SLOT(renderNextLODLevel()));
+#endif
 			}
+			else
+			{
+				m_mutex.unlock();
+			}
+		}
+		else
+		{
+			m_mutex.unlock();
 		}
 	}
 }
 
 void ccGLWindow::renderNextLODLevel()
 {
-	ccLog::PrintDebug(QString("[renderNextLODLevel] About to draw new LOD level?"));
+	//ccLog::PrintDebug(QString("[renderNextLODLevel] About to draw new LOD level?"));
+	m_mutex.lock();
 	m_LODPendingRefresh = false;
 	if (m_LODInProgress && m_currentLODLevel != 0 && !m_LODPendingIgnore)
 	{
-		ccLog::PrintDebug(QString("[renderNextLODLevel] Confirmed"));
-		QApplication::processEvents();
+		m_mutex.unlock();
+		//ccLog::PrintDebug(QString("[renderNextLODLevel] Confirmed"));
+#ifdef THREADED_GL_WIDGET
+		if (m_renderingThread)
+			m_renderingThread->redraw();
+		else
+			assert(false);
+#else
+		//QApplication::processEvents();
 		updateGL();
+#endif
 	}
 	else
 	{
-		ccLog::WarningDebug(QString("[renderNextLODLevel] Ignored"));
+		m_mutex.unlock();
+		//ccLog::WarningDebug(QString("[renderNextLODLevel] Ignored"));
 	}
 }
 
@@ -1453,8 +1482,14 @@ void ccGLWindow::draw3D(CC_DRAW_CONTEXT& CONTEXT, bool doDrawCross)
 	glPointSize(m_viewportParams.defaultPointSize);
 	glLineWidth(m_viewportParams.defaultLineWidth);
 
-	ccLog::PrintDebug(QString("[draw3D] LOD leve: %1").arg(m_currentLODLevel));
-	if (m_currentLODLevel == 0)
+	m_mutex.lock();
+	bool LODEnabled = m_LODEnabled;
+	unsigned char currentLODLevel = m_currentLODLevel;
+	unsigned currentLODStartIndex = m_currentLODStartIndex;
+	m_mutex.unlock();
+	//ccLog::PrintDebug(QString("[draw3D] LOD leve: %1").arg(currentLODLevel));
+
+	if (currentLODLevel == 0)
 	{
 		setStandardOrthoCenter();
 		glDisable(GL_DEPTH_TEST);
@@ -1502,7 +1537,7 @@ void ccGLWindow::draw3D(CC_DRAW_CONTEXT& CONTEXT, bool doDrawCross)
 
 	glEnable(GL_DEPTH_TEST);
 
-	if (doDrawCross && m_currentLODLevel == 0)
+	if (doDrawCross && currentLODLevel == 0)
 		drawCross();
 
 	/****************************************/
@@ -1528,7 +1563,7 @@ void ccGLWindow::draw3D(CC_DRAW_CONTEXT& CONTEXT, bool doDrawCross)
 	{
 		glEnableCustomLight();
 		if (	!m_captureMode.enabled
-			&&	m_currentLODLevel == 0)
+			&&	currentLODLevel == 0)
 		{
 			//we display it as a litle 3D star
 			drawCustomLight();
@@ -1548,17 +1583,18 @@ void ccGLWindow::draw3D(CC_DRAW_CONTEXT& CONTEXT, bool doDrawCross)
 	CONTEXT.customRenderingShader = m_customRenderingShader;
 
 	//LOD
-	if (m_LODEnabled && !s_frameRateTestInProgress)
+	bool LODInProgress = false;
+	if (LODEnabled && !m_frameRateTest.inProgress)
 	{
 		CONTEXT.flags |= CC_LOD_ACTIVATED;
 	
 		//LOD rendering level (for clouds only)
 		if (CONTEXT.decimateCloudOnMove)
 		{
-			//ccLog::Print(QString("[LOD] Rendering level %1").arg(m_currentLODLevel));
-			m_LODInProgress = true;
-			CONTEXT.currentLODLevel = m_currentLODLevel;
-			CONTEXT.currentLODStartIndex = m_currentLODStartIndex;
+			//ccLog::Print(QString("[LOD] Rendering level %1").arg(currentLODLevel));
+			LODInProgress = true;
+			CONTEXT.currentLODLevel = currentLODLevel;
+			CONTEXT.currentLODStartIndex = currentLODStartIndex;
 			CONTEXT.higherLODLevelsAvailable = false;
 			CONTEXT.moreLODPointsAvailable = false;
 		}
@@ -1578,7 +1614,7 @@ void ccGLWindow::draw3D(CC_DRAW_CONTEXT& CONTEXT, bool doDrawCross)
 		m_winDBRoot->draw(CONTEXT);
 
 	//for connected items
-	if (m_currentLODLevel == 0)
+	if (currentLODLevel == 0)
 		emit drawing3D();
 
 	//we disable shader (if any)
@@ -1592,45 +1628,56 @@ void ccGLWindow::draw3D(CC_DRAW_CONTEXT& CONTEXT, bool doDrawCross)
 		glDisableCustomLight();
 
 	//LOD
-	if (m_LODInProgress)
+	if (LODInProgress)
 	{
-		if (CONTEXT.moreLODPointsAvailable || CONTEXT.higherLODLevelsAvailable)
+		//detect a change of LOD parameters
+		m_mutex.lock();
+		if (m_currentLODLevel == currentLODLevel)
 		{
-			//we skip the lowest levels (should have already been drawn anyway)
-			if (m_currentLODLevel == 0)
+			if (CONTEXT.moreLODPointsAvailable || CONTEXT.higherLODLevelsAvailable)
 			{
-				m_currentLODLevel = CONTEXT.minLODLevel;
-				m_currentLODStartIndex = 0;
-			}
-			else
-			{
-				if (CONTEXT.moreLODPointsAvailable)
+				m_LODInProgress = true;
+				//we skip the lowest levels (should have already been drawn anyway)
+				if (m_currentLODLevel == 0)
 				{
-					//either we increase the start index
-					m_currentLODStartIndex += MAX_POINT_COUNT_PER_LOD_RENDER_PASS;
+					m_currentLODLevel = CONTEXT.minLODLevel;
+					m_currentLODStartIndex = 0;
 				}
 				else
 				{
-					//or the level
-					++m_currentLODLevel;
-					m_currentLODStartIndex = 0;
+					if (CONTEXT.moreLODPointsAvailable)
+					{
+						//either we increase the start index
+						m_currentLODStartIndex += MAX_POINT_COUNT_PER_LOD_RENDER_PASS;
+					}
+					else
+					{
+						//or the level
+						++m_currentLODLevel;
+						m_currentLODStartIndex = 0;
+					}
 				}
 			}
+			else
+			{
+				//we have reached the final level
+				disableLOD(false);
+			}
 		}
-		else
-		{
-			//we reached the final level
-			disableLOD();
-		}
+		m_mutex.unlock();
 	}
 }
 
-void ccGLWindow::disableLOD()
+void ccGLWindow::disableLOD(bool threadSafe/*=true*/)
 {
+	if (threadSafe)
+		m_mutex.lock();
 	//reset LOD rendering (if any)
 	m_currentLODLevel = 0;
 	m_LODProgressIndicator = 0;
 	m_LODInProgress = false;
+	if (threadSafe)
+		m_mutex.unlock();
 }
 
 void ccGLWindow::dragEnterEvent(QDragEnterEvent *event)
@@ -2733,7 +2780,8 @@ void ccGLWindow::updateActiveItemsList(int x, int y, bool extendToSelectedLabels
 	startPicking(params);
 
 #ifdef THREADED_GL_WIDGET
-	loop.exec();
+	//DGM TODO
+	//loop.exec();
 #endif
 
 	if (m_activeItems.size() == 1)

@@ -41,9 +41,16 @@ ccScalarField::ccScalarField(const char* name/*=0*/)
 	, m_colorScale(0)
 	, m_colorRampSteps(0)
 	, m_modified(true)
+	, m_mutexHolder(new MutexHolder)
 {
 	setColorRampSteps(ccColorScale::DEFAULT_STEPS);
 	setColorScale(ccColorScalesManager::GetUniqueInstance()->getDefaultScale(ccColorScalesManager::BGYR));
+}
+
+ccScalarField::~ccScalarField()
+{
+	if (m_mutexHolder)
+		delete m_mutexHolder;
 }
 
 ScalarType ccScalarField::normalize(ScalarType d) const
@@ -98,6 +105,7 @@ ScalarType ccScalarField::normalize(ScalarType d) const
 
 void ccScalarField::setColorScale(ccColorScale::Shared scale)
 {
+	lock();
 	if (m_colorScale != scale)
 	{
 		bool wasAbsolute = (m_colorScale && !m_colorScale->isRelative());
@@ -113,10 +121,12 @@ void ccScalarField::setColorScale(ccColorScale::Shared scale)
 
 		m_modified = true;
 	}
+	unlock();
 }
 
 void ccScalarField::setSymmetricalScale(bool state)
 {
+	lock();
 	if (m_symmetricalScale != state)
 	{
 		m_symmetricalScale = state;
@@ -124,10 +134,12 @@ void ccScalarField::setSymmetricalScale(bool state)
 
 		m_modified = true;
 	}
+	unlock();
 }
 
 void ccScalarField::setLogScale(bool state)
 {
+	lock();
 	if (m_logScale != state)
 	{
 		m_logScale = state;
@@ -138,10 +150,12 @@ void ccScalarField::setLogScale(bool state)
 
 		m_modified = true;
 	}
+	unlock();
 }
 
 void ccScalarField::computeMinAndMax()
 {
+	lock();
 	ScalarField::computeMinAndMax();
 
 	m_displayRange.setBounds(m_minVal,m_maxVal);
@@ -196,11 +210,13 @@ void ccScalarField::computeMinAndMax()
 
 	m_modified = true;
 
+	unlock();
 	updateSaturationBounds();
 }
 
 void ccScalarField::updateSaturationBounds()
 {
+	lock();
 	if (!m_colorScale || m_colorScale->isRelative()) //Relative scale (default)
 	{
 		ScalarType minAbsVal = ( m_maxVal < 0 ? std::min(-m_maxVal,-m_minVal) : std::max<ScalarType>(m_minVal,0) );
@@ -244,22 +260,28 @@ void ccScalarField::updateSaturationBounds()
 	}
 
 	m_modified = true;
+	unlock();
 }
 
 void ccScalarField::setMinDisplayed(ScalarType val)
 {
+	lock();
 	m_displayRange.setStart(val);
 	m_modified = true;
+	unlock();
 }
 	
 void ccScalarField::setMaxDisplayed(ScalarType val)
 {
+	lock();
 	m_displayRange.setStop(val);
 	m_modified = true;
+	unlock();
 }
 
 void ccScalarField::setSaturationStart(ScalarType val)
 {
+	lock();
 	if (m_logScale)
 	{
 		m_logSaturationRange.setStart(val/*log10(std::max(val,(ScalarType)ZERO_TOLERANCE))*/);
@@ -269,10 +291,12 @@ void ccScalarField::setSaturationStart(ScalarType val)
 		m_saturationRange.setStart(val);
 	}
 	m_modified = true;
+	unlock();
 }
 
 void ccScalarField::setSaturationStop(ScalarType val)
 {
+	lock();
 	if (m_logScale)
 	{
 		m_logSaturationRange.setStop(val/*log10(std::max(val,(ScalarType)ZERO_TOLERANCE))*/);
@@ -282,10 +306,12 @@ void ccScalarField::setSaturationStop(ScalarType val)
 		m_saturationRange.setStop(val);
 	}
 	m_modified = true;
+	unlock();
 }
 
 void ccScalarField::setColorRampSteps(unsigned steps)
 {
+	lock();
 	if (steps > ccColorScale::MAX_STEPS)
 		m_colorRampSteps = ccColorScale::MAX_STEPS;
 	else if (steps < ccColorScale::MIN_STEPS)
@@ -294,6 +320,7 @@ void ccScalarField::setColorRampSteps(unsigned steps)
 		m_colorRampSteps = steps;
 
 	m_modified = true;
+	unlock();
 }
 
 bool ccScalarField::toFile(QFile& out) const
@@ -369,6 +396,8 @@ bool ccScalarField::fromFile(QFile& in, short dataVersion, int flags)
 
 	if (dataVersion < 20)
 		return CorruptError();
+
+	QMutexLocker l(m_mutexHolder ? &(m_mutexHolder->mutex) : 0);
 
 	//name (dataVersion>=20)
 	if (in.read(m_name,256) < 0)
@@ -577,24 +606,30 @@ bool ccScalarField::fromFile(QFile& in, short dataVersion, int flags)
 
 bool ccScalarField::mayHaveHiddenValues() const
 {
+	lock();
 	bool hiddenPoints = (		!areNaNValuesShownInGrey()
 						&&	(	m_displayRange.stop()	<= m_displayRange.max()
 							||	m_displayRange.start()	>= m_displayRange.min() )
 						);
+	unlock();
 
 	return hiddenPoints;
 }
 
 void ccScalarField::showNaNValuesInGrey(bool state)
 {
+	lock();
 	m_showNaNValuesInGrey = state;
 	m_modified = true;
+	unlock();
 }
 
 void ccScalarField::alwaysShowZero(bool state)
 {
+	lock();
 	m_alwaysShowZero = state;
 	m_modified = true;
+	unlock();
 }
 
 void ccScalarField::importParametersFrom(const ccScalarField* sf)
@@ -611,8 +646,30 @@ void ccScalarField::importParametersFrom(const ccScalarField* sf)
 	setLogScale(sf->logScale());
 	setSymmetricalScale(sf->symmetricalScale());
 	alwaysShowZero(sf->isZeroAlwaysShown());
-	setMinDisplayed(sf->displayRange().start());
-	setMaxDisplayed(sf->displayRange().stop());
-	setSaturationStart(sf->saturationRange().start());
-	setSaturationStop(sf->saturationRange().stop());
+
+	ccScalarField::Range displayRange = sf->displayRange();
+	ccScalarField::Range saturationRange = sf->saturationRange();
+
+	setMinDisplayed(displayRange.start());
+	setMaxDisplayed(displayRange.stop());
+	setSaturationStart(saturationRange.start());
+	setSaturationStop (saturationRange.stop());
+}
+
+ccScalarField::Range ccScalarField::displayRange() const
+{
+	QMutexLocker l(m_mutexHolder ? &(m_mutexHolder->mutex) : 0);
+	return m_displayRange;
+}
+
+ccScalarField::Range ccScalarField::saturationRange() const
+{
+	QMutexLocker l(m_mutexHolder ? &(m_mutexHolder->mutex) : 0);
+	return m_logScale ? m_logSaturationRange : m_saturationRange;
+}
+
+ccScalarField::Range ccScalarField::logSaturationRange() const
+{
+	QMutexLocker l(m_mutexHolder ? &(m_mutexHolder->mutex) : 0);
+	return m_logSaturationRange;
 }

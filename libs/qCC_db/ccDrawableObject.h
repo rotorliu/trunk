@@ -22,8 +22,13 @@
 
 //Local
 #include "qCC_db.h"
+#include "ccAtomicBool.h"
 #include "ccGLMatrix.h"
 #include "ccMaterial.h"
+
+//Qt
+#include <QMutex>
+#include <QAtomicInt>
 
 class ccGenericGLDisplay;
 class ccScalarField;
@@ -197,8 +202,23 @@ public:
 	//! Copy constructor
 	ccDrawableObject(const ccDrawableObject& object);
 
+	//! Destructor
+	virtual ~ccDrawableObject();
+
 	//! Draws entity and its children
 	virtual void draw(CC_DRAW_CONTEXT& context) = 0;
+
+	//! Mutex holder (trick for const access to the mutex) 
+	struct MutexHolder { MutexHolder() : mutex(QMutex::Recursive) {}; QMutex mutex; };
+
+	//! Locks object (typically before display)
+	/** \warning unlock must be called afterwards!
+	**/
+	inline void lock() const { if (m_mutexHolder) m_mutexHolder->mutex.lock(); }
+	//! Unlocks object (typically before display)
+	/** \warning lock must have alerady been called!
+	**/
+	inline void unlock() const { if (m_mutexHolder) m_mutexHolder->mutex.unlock(); }
 
 	//! Returns whether entity is visible or not
 	inline virtual bool isVisible() const { return m_visible; }
@@ -289,7 +309,7 @@ public:
 	inline virtual bool isColorOverriden() const { return m_colorIsOverriden; }
 
 	//! Returns current temporary (unique) color
-	inline virtual const ccColor::Rgb& getTempColor() const { return m_tempColor; }
+	virtual void getTempColor(ccColor::Rgb&) const;
 
 	//! Sets current temporary (unique)
 	/** \param col rgb color
@@ -309,7 +329,7 @@ public:
 	virtual void setDisplay(ccGenericGLDisplay* win);
 
 	//! Returns associated GL display
-	inline virtual ccGenericGLDisplay* getDisplay() const { return m_currentDisplay; }
+	virtual ccGenericGLDisplay* getDisplay() const;
 
 	//! Redraws associated GL display
 	virtual void redrawDisplay();
@@ -350,7 +370,7 @@ public:
 	//! Retuns associated GL transformation
 	/** See ccDrawableObject::setGLTransformation.
 	**/
-	inline virtual const ccGLMatrix& getGLTransformation() const { return m_glTrans; }
+	virtual ccGLMatrix getGLTransformation() const;
 
 	//! Resets associated GL transformation
 	/** GL transformation is reset to identity.
@@ -378,27 +398,27 @@ protected:
 	//! Specifies whether the object is visible or not
 	/** Note: this does not influence the children visibility
 	**/
-	bool m_visible;
+	ccAtomicBool m_visible;
 
 	//! Specifies whether the object is selected or not
-	bool m_selected;
+	ccAtomicBool m_selected;
 
 	//! Specifies whether the visibility can be changed by user or not
-	bool m_lockedVisibility;
+	ccAtomicBool m_lockedVisibility;
 
 	/*** OpenGL display parameters ***/
 
 	//! Specifies whether colors should be displayed
-	bool m_colorsDisplayed;
+	ccAtomicBool m_colorsDisplayed;
 	//! Specifies whether normals should be displayed
-	bool m_normalsDisplayed;
+	ccAtomicBool m_normalsDisplayed;
 	//! Specifies whether scalar field should be displayed
-	bool m_sfDisplayed;
+	ccAtomicBool m_sfDisplayed;
 
 	//! Temporary (unique) color
 	ccColor::Rgb m_tempColor;
 	//! Temporary (unique) color activation state
-	bool m_colorIsOverriden;
+	ccAtomicBool m_colorIsOverriden;
 
 	//! Current GL transformation
 	/** See ccDrawableObject::setGLTransformation.
@@ -407,13 +427,16 @@ protected:
 	//! Current GL transformation activation state
 	/** See ccDrawableObject::setGLTransformation.
 	**/
-	bool m_glTransEnabled;
+	ccAtomicBool m_glTransEnabled;
 
 	//! Whether name is displayed in 3D or not
-	bool m_showNameIn3D;
+	ccAtomicBool m_showNameIn3D;
 
 	//! Currently associated GL display
 	ccGenericGLDisplay* m_currentDisplay;
+
+	//! For concurrent access (e.g. display in a separate thread)
+	MutexHolder* m_mutexHolder;
 };
 
 #endif //CC_DRAWABLE_OBJECT_HEADER

@@ -41,7 +41,7 @@
 #ifdef THREADED_GL_WIDGET
 #include <QThread>
 #include <QWaitCondition>
-#include <QAtomicInt>
+#include <ccAtomicBool.h>
 #endif
 //system
 #include <set>
@@ -681,8 +681,8 @@ protected:
 
 		ccGLWindow* m_window;
 		QWaitCondition m_waitCondition;
-		QAtomicInt m_abort;
-		QAtomicInt m_pendingRedraw;
+		ccAtomicBool m_abort;
+		ccAtomicBool m_pendingRedraw;
 	};
 
 	friend RenderingThread;
@@ -690,7 +690,7 @@ protected:
 	RenderingThread* m_renderingThread;
 	QGLFormat m_format;
 	const QGLWidget* m_shareWidget; 
-	QAtomicInt m_resized;
+	ccAtomicBool m_resized;
 #endif
 
 	//Graphical features controls

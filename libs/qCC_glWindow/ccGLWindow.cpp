@@ -677,7 +677,7 @@ void ccGLWindow::uninitializeGL()
 #ifdef THREADED_GL_WIDGET
 void ccGLWindow::resizeEvent(QResizeEvent *evt)
 {
-	m_resized.store(1);
+	m_resized = true;
 	//notify thread of resize event
 	if (m_renderingThread)
 		m_renderingThread->redraw();
@@ -728,14 +728,14 @@ ccGLWindow::RenderingThread::RenderingThread(ccGLWindow* win)
 
 void ccGLWindow::RenderingThread::redraw()
 {
-	m_pendingRedraw.store(1);
+	m_pendingRedraw = true;
 	m_waitCondition.wakeOne();
 }
 
 void ccGLWindow::RenderingThread::stop()
 {
-	m_abort.store(1);
-	m_pendingRedraw.store(0);
+	m_abort = true;
+	m_pendingRedraw = false;
 	m_waitCondition.wakeOne();
 	wait(5*60*1000); ///wait max 5 s.
 }
@@ -747,17 +747,17 @@ void ccGLWindow::RenderingThread::run()
 		assert(false);
 		return;
 	}
-	m_abort.store(0);
+	m_abort = false;
 
 	while (true)
 	{
-		if (m_pendingRedraw.load() == 0)
+		if (m_pendingRedraw == 0)
 		{
 			m_window->m_mutex.lock();
 			m_waitCondition.wait(&m_window->m_mutex);
 			m_window->m_mutex.unlock();
 		
-			if (m_abort.load() != 0)
+			if (m_abort != 0)
 			{
 				//we should stop the rendering loop!
 				break;
@@ -769,16 +769,16 @@ void ccGLWindow::RenderingThread::run()
 			m_window->initialize();
 		}
 
-		if (m_window->m_resized.load() != 0)
+		if (m_window->m_resized != 0)
 		{
 			m_window->makeCurrent();
 			m_window->resizeGL2();
 			m_window->doneCurrent();
 		}
 
-		if (m_pendingRedraw.load() != 0)
+		if (m_pendingRedraw != 0)
 		{
-			m_pendingRedraw.store(0);
+			m_pendingRedraw = false;
 			m_window->makeCurrent();
 			m_window->paint();
 			m_window->swapBuffers();
@@ -832,7 +832,7 @@ void ccGLWindow::resizeGL2()
 	ccGLUtils::CatchGLError("ccGLWindow::resizeGL");
 	
 #ifdef THREADED_GL_WIDGET
-	m_resized.store(0);
+	m_resized = false;
 #endif
 }
 

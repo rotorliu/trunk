@@ -685,7 +685,7 @@ protected:
 		ccAtomicBool m_pendingRedraw;
 	};
 
-	friend ccGLWindow::RenderingThread;
+	friend class RenderingThread;
 
 	RenderingThread* m_renderingThread;
 	QGLFormat m_format;

@@ -39,6 +39,7 @@ v2.6.2 XX/XX/2015
 		- rendering zoom is now more properly taken into account when displaying 2D labels
 		- zoomed text size is estimated in a more accurate way
 		- the displayed size for the scale was wrong when the zoom was not 1
+	* 3D views now recognize the 'pinching' gesture (with 2 fingers) on multi-touch screens (to zoom)
 		
 - Bug fixes:
 	* The point size couldn't be modified in the 3D view of the 'Rasterize' tool

@@ -421,8 +421,8 @@ void ccRasterizeTool::loadSettings()
 	bool ignoreBorders			= settings.value("IgnoreBorders",ignoreContourBordersCheckBox->isChecked()).toBool();
 	bool generateCountSF		= settings.value("generateCountSF",generateCountSFcheckBox->isChecked()).toBool();
 	bool generateMinHeightSF	= settings.value("generateMinHeightSF",generateMinHeightSFcheckBox->isChecked()).toBool();
-	bool generateMaxHeightSF	= settings.value("generateMaxHeightSF",generateMinHeightSFcheckBox->isChecked()).toBool();
-	bool generateAbgHeightSF	= settings.value("generateAvgHeightSF",generateAvgHeightSFcheckBox->isChecked()).toBool();
+	bool generateMaxHeightSF	= settings.value("generateMaxHeightSF",generateMaxHeightSFcheckBox->isChecked()).toBool();
+	bool generateAvgHeightSF	= settings.value("generateAvgHeightSF",generateAvgHeightSFcheckBox->isChecked()).toBool();
 	bool generateStdDevHeightSF	= settings.value("generateStdDevHeightSF",generateStdDevHeightSFcheckBox->isChecked()).toBool();
 	bool generateHeightRangeSF	= settings.value("generateHeightRangeSF",generateHeightRangeSFcheckBox->isChecked()).toBool();
 	
@@ -441,8 +441,8 @@ void ccRasterizeTool::loadSettings()
 	ignoreContourBordersCheckBox->setChecked(ignoreBorders);
 	generateCountSFcheckBox->setChecked(generateCountSF);
 	generateMinHeightSFcheckBox->setChecked(generateMinHeightSF);
-	generateMinHeightSFcheckBox->setChecked(generateMaxHeightSF);
-	generateAvgHeightSFcheckBox->setChecked(generateAbgHeightSF);
+	generateMaxHeightSFcheckBox->setChecked(generateMaxHeightSF);
+	generateAvgHeightSFcheckBox->setChecked(generateAvgHeightSF);
 	generateStdDevHeightSFcheckBox->setChecked(generateStdDevHeightSF);
 	generateHeightRangeSFcheckBox->setChecked(generateHeightRangeSF);
 }
@@ -492,7 +492,7 @@ void ccRasterizeTool::saveSettings()
 	settings.setValue("IgnoreBorders",ignoreContourBordersCheckBox->isChecked());
 	settings.setValue("generateCountSF",generateCountSFcheckBox->isChecked());
 	settings.setValue("generateMinHeightSF",generateMinHeightSFcheckBox->isChecked());
-	settings.setValue("generateMaxHeightSF",generateMinHeightSFcheckBox->isChecked());
+	settings.setValue("generateMaxHeightSF",generateMaxHeightSFcheckBox->isChecked());
 	settings.setValue("generateAvgHeightSF",generateAvgHeightSFcheckBox->isChecked());
 	settings.setValue("generateStdDevHeightSF",generateStdDevHeightSFcheckBox->isChecked());
 	settings.setValue("generateHeightRangeSF",generateHeightRangeSFcheckBox->isChecked());

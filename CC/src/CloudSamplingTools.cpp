@@ -51,7 +51,7 @@ GenericIndexedCloud* CloudSamplingTools::resampleCloudWithOctree(	GenericIndexed
 	}
 
 	//on cherche le niveau qui donne le nombre de points le plus proche de la consigne
-	uchar bestLevel=octree->findBestLevelForAGivenCellNumber(newNumberOfPoints);
+	unsigned char bestLevel=octree->findBestLevelForAGivenCellNumber(newNumberOfPoints);
 
 	GenericIndexedCloud* sampledCloud = resampleCloudWithOctreeAtLevel(inputCloud,bestLevel,resamplingMethod,progressCb,octree);
 
@@ -61,7 +61,11 @@ GenericIndexedCloud* CloudSamplingTools::resampleCloudWithOctree(	GenericIndexed
 	return sampledCloud;
 }
 
-SimpleCloud* CloudSamplingTools::resampleCloudWithOctreeAtLevel(GenericIndexedCloudPersist* inputCloud, uchar octreeLevel, RESAMPLING_CELL_METHOD resamplingMethod, GenericProgressCallback* progressCb, DgmOctree* inputOctree)
+SimpleCloud* CloudSamplingTools::resampleCloudWithOctreeAtLevel(GenericIndexedCloudPersist* inputCloud,
+																unsigned char octreeLevel,
+																RESAMPLING_CELL_METHOD resamplingMethod,
+																GenericProgressCallback* progressCb/*=0*/,
+																DgmOctree* inputOctree/*=0*/)
 {
 	assert(inputCloud);
 
@@ -127,7 +131,7 @@ ReferenceCloud* CloudSamplingTools::subsampleCloudWithOctree(	GenericIndexedClou
 	}
 
 	//on cherche le niveau qui donne le nombre de points le plus proche de la consigne
-	uchar bestLevel=octree->findBestLevelForAGivenCellNumber(newNumberOfPoints);
+	unsigned char bestLevel = octree->findBestLevelForAGivenCellNumber(newNumberOfPoints);
 
 	ReferenceCloud* subsampledCloud = subsampleCloudWithOctreeAtLevel(inputCloud,bestLevel,subsamplingMethod,progressCb,octree);
 
@@ -138,7 +142,7 @@ ReferenceCloud* CloudSamplingTools::subsampleCloudWithOctree(	GenericIndexedClou
 }
 
 ReferenceCloud* CloudSamplingTools::subsampleCloudWithOctreeAtLevel(GenericIndexedCloudPersist* inputCloud,
-																	uchar octreeLevel,
+																	unsigned char octreeLevel,
 																	SUBSAMPLING_CELL_METHOD subsamplingMethod,
 																	GenericProgressCallback* progressCb/*=0*/,
 																	DgmOctree* inputOctree/*=0*/)
@@ -276,8 +280,8 @@ ReferenceCloud* CloudSamplingTools::resampleCloudSpatially(GenericIndexedCloudPe
 		return 0;
 	}
 
-	GenericChunkedArray<1,bool>* markers = new GenericChunkedArray<1,bool>(); //DGM: upgraded from vector, as this can be quite huge!
-	if (!markers->resize(cloudSize,true,true))
+	GenericChunkedArray<1,char>* markers = new GenericChunkedArray<1,char>(); //DGM: upgraded from vector, as this can be quite huge!
+	if (!markers->resize(cloudSize,true,1)) //true by default
 	{
 		markers->release();
 		if (!inputOctree)
@@ -369,7 +373,7 @@ ReferenceCloud* CloudSamplingTools::resampleCloudSpatially(GenericIndexedCloudPe
 	for (unsigned i=0; i<cloudSize; i++, markers->forwardIterator())
 	{
 		//no mark? we skip this point
-		if (markers->getCurrentValue())
+		if (markers->getCurrentValue() != 0)
 		{
 			//init neighbor search structure
 			const CCVector3* P = inputCloud->getPoint(i);
@@ -401,7 +405,7 @@ ReferenceCloud* CloudSamplingTools::resampleCloudSpatially(GenericIndexedCloudPe
 				octree->getPointsInSphericalNeighbourhood(*P,minDistBetweenPoints,neighbours,octreeLevel);
 				for (DgmOctree::NeighboursSet::iterator it = neighbours.begin(); it != neighbours.end(); ++it)
 					if (it->pointIndex != i)
-						markers->setValue(it->pointIndex,false);
+						markers->setValue(it->pointIndex,0);
 			}
 
 			//At this stage, the ith point is the only one marked in a radius of <minDistance>.
@@ -513,7 +517,7 @@ ReferenceCloud* CloudSamplingTools::sorFilter(GenericIndexedCloudPersist* inputC
 											reinterpret_cast<void*>(&meanDistances)
 			};
 
-			uchar octreeLevel = octree->findBestLevelForAGivenPopulationPerCell(knn);
+			unsigned char octreeLevel = octree->findBestLevelForAGivenPopulationPerCell(knn);
 
 			if (octree->executeFunctionForAllCellsAtLevel(	octreeLevel,
 															&applySORFilterAtLevel,
@@ -625,7 +629,7 @@ ReferenceCloud* CloudSamplingTools::noiseFilter(GenericIndexedCloudPersist* inpu
 									reinterpret_cast<void*>(&absoluteError)
 	};
 
-	uchar octreeLevel = 0;
+	unsigned char octreeLevel = 0;
 	if (useKnn)
 		octreeLevel = octree->findBestLevelForAGivenNeighbourhoodSizeExtraction(kernelRadius);
 	else

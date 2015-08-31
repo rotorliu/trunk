@@ -47,7 +47,7 @@
 //System
 #include <assert.h>
 
-const uchar DEFAULT_OCTREE_LEVEL = 7;
+const unsigned char DEFAULT_OCTREE_LEVEL = 7;
 
 ccComparisonDlg::ccComparisonDlg(	ccHObject* compEntity,
 									ccHObject* refEntity,
@@ -336,12 +336,12 @@ int ccComparisonDlg::computeApproxResults()
 	if (!isValid())
 		return approxResult;
 
-	int sfIdx = m_compCloud->getScalarFieldIndexByName(CC_TEMP_CHAMFER_DISTANCES_DEFAULT_SF_NAME);
+	int sfIdx = m_compCloud->getScalarFieldIndexByName(CC_TEMP_APPROX_DISTANCES_DEFAULT_SF_NAME);
 	if (sfIdx < 0)
-		sfIdx = m_compCloud->addScalarField(CC_TEMP_CHAMFER_DISTANCES_DEFAULT_SF_NAME);
+		sfIdx = m_compCloud->addScalarField(CC_TEMP_APPROX_DISTANCES_DEFAULT_SF_NAME);
 	if (sfIdx < 0)
 	{
-		ccLog::Error("Failed to allocate a new scalar field for computing distances! Try to free some memory ...");
+		ccLog::Error("Failed to allocate a new scalar field for computing approx. distances! Try to free some memory ...");
 		return approxResult;
 	}
 
@@ -360,7 +360,13 @@ int ccComparisonDlg::computeApproxResults()
 		{
 			//Approximate distance can (and must) now take max search distance into account!
 			PointCoordinateType maxDistance = static_cast<PointCoordinateType>(maxSearchDistSpinBox->isEnabled() ? maxSearchDistSpinBox->value() : -1.0);
-			approxResult = CCLib::DistanceComputationTools::computeApproxCloud2CloudDistance(CHAMFER_345,m_compCloud,m_refCloud,DEFAULT_OCTREE_LEVEL,maxDistance,&progressDlg,m_compOctree,m_refOctree);
+			approxResult = CCLib::DistanceComputationTools::computeApproxCloud2CloudDistance(	m_compCloud,
+																								m_refCloud,
+																								DEFAULT_OCTREE_LEVEL,
+																								maxDistance,
+																								&progressDlg,
+																								m_compOctree,
+																								m_refOctree);
 		}
 		break;
 	case CLOUDMESH_DIST: //cloud-mesh
@@ -396,44 +402,34 @@ int ccComparisonDlg::computeApproxResults()
 		approxStats->setRowCount(5);
 		approxStats->setColumnWidth(1,200);
 		approxStats->horizontalHeader()->hide();
-		QTableWidgetItem *item = 0;
-		int curRow=0;
+		int curRow = 0;
 
 		//min dist
-		item = new QTableWidgetItem("Min dist.");
-		approxStats->setItem(curRow, 0, item);
-		item = new QTableWidgetItem(QString("%1").arg(sf->getMin()));
-		approxStats->setItem(curRow++, 1, item);
+		approxStats->setItem(curRow, 0, new QTableWidgetItem("Min dist."));
+		approxStats->setItem(curRow++, 1, new QTableWidgetItem(QString("%1").arg(sf->getMin())));
 
 		//max dist
-		item = new QTableWidgetItem("Max dist.");
-		approxStats->setItem(curRow, 0, item);
-		item = new QTableWidgetItem(QString("%1").arg(sf->getMax()));
-		approxStats->setItem(curRow++, 1, item);
+		approxStats->setItem(curRow, 0, new QTableWidgetItem("Max dist."));
+		approxStats->setItem(curRow++, 1, new QTableWidgetItem(QString("%1").arg(sf->getMax())));
 
 		//mean dist
-		item = new QTableWidgetItem("Avg dist.");
-		approxStats->setItem(curRow, 0, item);
-		item = new QTableWidgetItem(QString("%1").arg(mean));
-		approxStats->setItem(curRow++, 1, item);
+		approxStats->setItem(curRow, 0, new QTableWidgetItem("Avg dist."));
+		approxStats->setItem(curRow++, 1, new QTableWidgetItem(QString("%1").arg(mean)));
 
 		//sigma
-		item = new QTableWidgetItem("Sigma");
-		approxStats->setItem(curRow, 0, item);
-		item = new QTableWidgetItem(QString("%1").arg(variance >= 0.0 ? sqrt(variance) : variance));
-		approxStats->setItem(curRow++, 1, item);
+		approxStats->setItem(curRow, 0, new QTableWidgetItem("Sigma"));
+		approxStats->setItem(curRow++, 1, new QTableWidgetItem(QString("%1").arg(variance >= 0.0 ? sqrt(variance) : variance)));
 
 		//Max relative error
 		PointCoordinateType cs = m_compOctree->getCellSize(DEFAULT_OCTREE_LEVEL);
-		double e1 = 100.0*(1.0-sqrt(25.0/27.0));
-		double e2 = 100.0*static_cast<double>(cs);
-		item = new QTableWidgetItem("Max relative error");
-		approxStats->setItem(curRow, 0, item);
-		item = new QTableWidgetItem(QString("%1 + %2/d % (d>%3)").arg(e1).arg(e2).arg(cs));
-		approxStats->setItem(curRow++, 1, item);
+		double e = cs / 2.0;
+		approxStats->setItem(curRow, 0, new QTableWidgetItem("Max error"));
+		approxStats->setItem(curRow++, 1, new QTableWidgetItem(QString("%1").arg(e)));
 
-		for (int i=0;i<curRow;++i)
+		for (int i=0; i<curRow; ++i)
 			approxStats->setRowHeight(i,20);
+
+		approxStats->setEditTriggers(QAbstractItemView::NoEditTriggers);
 
 		//enable the corresponding UI items
 		preciseResultsTabWidget->widget(2)->setEnabled(true);
@@ -540,12 +536,12 @@ int ccComparisonDlg::determineBestOctreeLevel(double maxSearchDist)
 
 		//we compute a 'correction factor' that converts an approximate distance into an
 		//approximate size of the neighborhood (in terms of cells)
-		PointCoordinateType cellSize = m_compOctree->getCellSize(static_cast<uchar>(level));
+		PointCoordinateType cellSize = m_compOctree->getCellSize(static_cast<unsigned char>(level));
 
 		//we also use the reference cloud density (points/cell) if we have the info
 		double refListDensity = 1.0;
 		if (m_refOctree)
-			refListDensity = m_refOctree->computeMeanOctreeDensity(static_cast<uchar>(level));
+			refListDensity = m_refOctree->computeMeanOctreeDensity(static_cast<unsigned char>(level));
 
 		CCLib::DgmOctree::OctreeCellCodeType tempCode = 0xFFFFFFFF;
 
@@ -658,7 +654,7 @@ bool ccComparisonDlg::compute()
 	bool split3DSigned = signedDistances;
 
 	//does the cloud has already a temporary scalar field that we can use?
-	int sfIdx = m_compCloud->getScalarFieldIndexByName(CC_TEMP_CHAMFER_DISTANCES_DEFAULT_SF_NAME);
+	int sfIdx = m_compCloud->getScalarFieldIndexByName(CC_TEMP_APPROX_DISTANCES_DEFAULT_SF_NAME);
 	if (sfIdx < 0)
 	{
 		//or maybe a real one?
@@ -704,7 +700,7 @@ bool ccComparisonDlg::compute()
 	}
 
 	CCLib::DistanceComputationTools::Cloud2CloudDistanceComputationParams params;
-	params.octreeLevel = static_cast<uchar>(bestOctreeLevel);
+	params.octreeLevel = static_cast<unsigned char>(bestOctreeLevel);
 	if (localModelingTab->isEnabled())
 	{
 		params.localModel = (CC_LOCAL_MODEL_TYPES)localModelComboBox->currentIndex();
@@ -741,7 +737,7 @@ bool ccComparisonDlg::compute()
 		
 		result = CCLib::DistanceComputationTools::computeCloud2MeshDistance(	m_compCloud,
 																				m_refMesh,
-																				static_cast<uchar>(bestOctreeLevel),
+																				static_cast<unsigned char>(bestOctreeLevel),
 																				maxSearchDist,
 																				false,
 																				signedDistances,
@@ -905,7 +901,7 @@ void ccComparisonDlg::applyAndExit()
 		//m_compCloud->showSF(false);
 
 		//this SF shouldn't be here, but in any case, we get rid of it!
-		int tmpSfIdx = m_compCloud->getScalarFieldIndexByName(CC_TEMP_CHAMFER_DISTANCES_DEFAULT_SF_NAME);
+		int tmpSfIdx = m_compCloud->getScalarFieldIndexByName(CC_TEMP_APPROX_DISTANCES_DEFAULT_SF_NAME);
 		if (tmpSfIdx >= 0)
 		{
 			m_compCloud->deleteScalarField(tmpSfIdx);
@@ -961,7 +957,7 @@ void ccComparisonDlg::cancelAndExit()
 		m_compCloud->showSF(false);
 
 		//we get rid of any temporary scalar field
-		int tmpSfIdx = m_compCloud->getScalarFieldIndexByName(CC_TEMP_CHAMFER_DISTANCES_DEFAULT_SF_NAME);
+		int tmpSfIdx = m_compCloud->getScalarFieldIndexByName(CC_TEMP_APPROX_DISTANCES_DEFAULT_SF_NAME);
 		if (tmpSfIdx >= 0)
 		{
 			m_compCloud->deleteScalarField(tmpSfIdx);

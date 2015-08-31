@@ -459,7 +459,29 @@ void ccPropertiesTreeDelegate::fillWithPointCloud(ccGenericPointCloud* _obj)
 	//custom point size
 	appendRow( ITEM("Point size"), PERSISTENT_EDITOR(OBJECT_CLOUD_POINT_SIZE), true );
 
+	//scalar field
 	fillSFWithPointCloud(_obj);
+
+	//scan grid structure(s)
+	if (_obj->isA(CC_TYPES::POINT_CLOUD))
+	{
+		ccPointCloud* cloud = static_cast<ccPointCloud*>(_obj);
+		size_t gridCount = cloud->gridCount();
+		if (gridCount != 0)
+		{
+			if (gridCount != 1)
+				addSeparator("Scan grids");
+			else
+				addSeparator("Scan grid");
+
+			for (size_t i=0; i<gridCount; ++i)
+			{
+				//grid size + valid point count
+				ccPointCloud::Grid::Shared grid = cloud->grid(i);
+				appendRow( ITEM(QString("Scan #%1").arg(i+1)), ITEM(QString("%1 x %2 (%3 points)").arg(grid->w).arg(grid->h).arg(QLocale(QLocale::English).toString(grid->validCount))) );
+			}
+		}
+	}
 }
 
 void ccPropertiesTreeDelegate::fillSFWithPointCloud(ccGenericPointCloud* _obj)
@@ -635,11 +657,11 @@ void ccPropertiesTreeDelegate::fillWithPointOctree(ccOctree* _obj)
 	assert(level > 0 && level <= ccOctree::MAX_OCTREE_LEVEL);
 
 	//cell size
-	PointCoordinateType cellSize = _obj->getCellSize(static_cast<uchar>(level));
+	PointCoordinateType cellSize = _obj->getCellSize(static_cast<unsigned char>(level));
 	appendRow( ITEM("Cell size"), ITEM(QString::number(cellSize)) );
 
 	//cell count
-	unsigned cellCount = _obj->getCellNumber(static_cast<uchar>(level));
+	unsigned cellCount = _obj->getCellNumber(static_cast<unsigned char>(level));
 	appendRow( ITEM("Cell count"), ITEM(QLocale(QLocale::English).toString(cellCount)) );
 
 	//total volume of filled cells
@@ -1229,9 +1251,15 @@ QWidget* ccPropertiesTreeDelegate::createEditor(QWidget *parent,
 			if (m_currentObject)
 			{
 				if (m_currentObject->hasColors())
+				{
 					comboBox->addItem(s_rgbColor);
+					comboBox->setItemIcon(comboBox->count()-1, QIcon(QString::fromUtf8(":/CC/images/typeRgbCcolor.png")));
+				}
 				if (m_currentObject->hasScalarFields())
+				{
 					comboBox->addItem(s_sfColor);
+					comboBox->setItemIcon(comboBox->count()-1, QIcon(QString::fromUtf8(":/CC/images/typeSF.png")));
+				}
 				connect(comboBox, SIGNAL(currentIndexChanged(const QString)), this, SLOT(colorSourceChanged(const QString&)));
 			}
 

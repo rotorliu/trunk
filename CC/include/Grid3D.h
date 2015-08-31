@@ -114,6 +114,7 @@ public:
 	bool intersecthWith(GenericIndexedMesh* mesh,
 						PointCoordinateType cellLength,
 						const CCVector3& gridMinCorner,
+						GridElement intersectValue = 0,
 						GenericProgressCallback* progressCb = 0)
 	{
 		if (!mesh || !isInitialized())
@@ -206,7 +207,7 @@ public:
 
 				//we deduce the smallest bounding cell
 				static const double LOG_2 = log(2.0);
-				_currentCell->cellSize = (1 << (maxSize > 1 ? static_cast<uchar>(ceil(log(static_cast<double>(maxSize)) / LOG_2)) : 0));
+				_currentCell->cellSize = (1 << (maxSize > 1 ? static_cast<unsigned char>(ceil(log(static_cast<double>(maxSize)) / LOG_2)) : 0));
 
 				//now we can (recursively) find the intersecting cells
 				while (cellsToTestCount != 0)
@@ -230,7 +231,7 @@ public:
 								(currentCellPos.y >= 0 && currentCellPos.y < static_cast<int>(size().y)) &&
 								(currentCellPos.z >= 0 && currentCellPos.z < static_cast<int>(size().z)))
 							{
-								setValue(currentCellPos, 0);
+								setValue(currentCellPos, intersectValue);
 							}
 						}
 					}

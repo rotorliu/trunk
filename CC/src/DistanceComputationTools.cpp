@@ -26,7 +26,7 @@
 #include "GenericTriangle.h"
 #include "GenericIndexedMesh.h"
 #include "GenericProgressCallback.h"
-#include "ChamferDistanceTransform.h"
+#include "SaitoSquaredDistanceTransform.h"
 #include "FastMarchingForPropagation.h"
 #include "ScalarFieldTools.h"
 #include "CCConst.h"
@@ -84,7 +84,7 @@ namespace CCLib
 		//! Mesh
 		GenericIndexedMesh* mesh;
 		//! Distance transform
-		ChamferDistanceTransform* distanceTransform;
+		SaitoSquaredDistanceTransform* distanceTransform;
 
 		//! Grid occupancy of mesh (minimum indexes for each dimension)
 		Tuple3i minFillIndexes;
@@ -268,18 +268,20 @@ DistanceComputationTools::SOReturnCode
 	comparedCloud->getBoundingBox(minsA,maxsA);
 	referenceCloud->getBoundingBox(minsB,maxsB);
 
-	CCVector3 maxD,minD;
 	//we compute the union of both bounding-boxes
-	for (uchar k=0; k<3; k++)
+	CCVector3 maxD,minD;
 	{
-		minD.u[k] = std::min(minsA.u[k],minsB.u[k]);
-		maxD.u[k] = std::max(maxsA.u[k],maxsB.u[k]);
+		for (unsigned char k=0; k<3; k++)
+		{
+			minD.u[k] = std::min(minsA.u[k],minsB.u[k]);
+			maxD.u[k] = std::max(maxsA.u[k],maxsB.u[k]);
+		}
 	}
 
 	if (maxDist >= 0)
 	{
 		//we reduce the bouding box to the intersection of both bounding-boxes enlarged by 'maxDist'
-		for (uchar k=0; k<3; k++)
+		for (unsigned char k=0; k<3; k++)
 		{
 			minD.u[k] = std::max(minD.u[k],std::max(minsA.u[k],minsB.u[k])-maxDist);
 			maxD.u[k] = std::min(maxD.u[k],std::min(maxsA.u[k],maxsB.u[k])+maxDist);
@@ -301,7 +303,7 @@ DistanceComputationTools::SOReturnCode
 	if (comparedOctree && comparedOctree->getNumberOfProjectedPoints() != 0)
 	{
 		needToRecalculateOctreeA = false;
-		for (uchar k=0; k<3; k++)
+		for (unsigned char k=0; k<3; k++)
 		{
 			if (	maxD.u[k] != comparedOctree->getOctreeMaxs().u[k]
 				||	minD.u[k] != comparedOctree->getOctreeMins().u[k] )
@@ -341,7 +343,7 @@ DistanceComputationTools::SOReturnCode
 	if (referenceOctree && referenceOctree->getNumberOfProjectedPoints() != 0)
 	{
 		needToRecalculateOctreeB = false;
-		for (uchar k=0; k<3; k++)
+		for (unsigned char k=0; k<3; k++)
 		{
 			if (	maxD.u[k] != referenceOctree->getOctreeMaxs().u[k]
 				||	minD.u[k] != referenceOctree->getOctreeMins().u[k] )
@@ -666,11 +668,11 @@ struct CellToTest
 	//! Cell size
 	int cellSize;
 	//! Subdivision level
-	uchar level;
+	unsigned char level;
 };
 
 int DistanceComputationTools::intersectMeshWithOctree(	OctreeAndMeshIntersection* intersection,
-														uchar octreeLevel,
+														unsigned char octreeLevel,
 														GenericProgressCallback* progressCb/*=0*/)
 {
 	if (!intersection)
@@ -750,7 +752,7 @@ int DistanceComputationTools::intersectMeshWithOctree(	OctreeAndMeshIntersection
 			CellToTest* _currentCell = &cellsToTest[0/*cellsToTestCount-1*/];
 
 			_currentCell->pos = minPos;
-			CCVector3 distanceToOctreeMinBorder = minBB-(*triPoints[0]);
+			CCVector3 distanceToOctreeMinBorder = minBB - (*triPoints[0]);
 
 			//compute the triangle normal
 			CCVector3 N = AB.cross(BC);
@@ -767,7 +769,7 @@ int DistanceComputationTools::intersectMeshWithOctree(	OctreeAndMeshIntersection
 			//(not a real octree cell in fact as its starting position is anywhere in the grid
 			//and it can even 'outbounds' the grid, i.e. currentCell.pos.u[k]+currentCell.cellSize > octreeLength)
 			static const double LOG_2 = log(2.0);
-			_currentCell->level = octreeLevel-(maxSize > 1 ? static_cast<uchar>(ceil(log(static_cast<double>(maxSize))/LOG_2)) : 0);
+			_currentCell->level = octreeLevel-(maxSize > 1 ? static_cast<unsigned char>(ceil(log(static_cast<double>(maxSize))/LOG_2)) : 0);
 			_currentCell->cellSize = (1 << (octreeLevel-_currentCell->level));
 
 			//now we can (recursively) find the intersecting cells
@@ -809,7 +811,7 @@ int DistanceComputationTools::intersectMeshWithOctree(	OctreeAndMeshIntersection
 
 							if (intersection->distanceTransform)
 							{
-								intersection->distanceTransform->setValue(cellPos, 0);
+								intersection->distanceTransform->setValue(cellPos, 1);
 							}
 						}
 					}
@@ -1251,7 +1253,7 @@ void cloudMeshDistCellFunc_MT(const DgmOctree::IndexAndCode& desc)
 #endif
 
 int DistanceComputationTools::computeCloud2MeshDistanceWithOctree(	OctreeAndMeshIntersection* intersection,
-																	uchar octreeLevel,
+																	unsigned char octreeLevel,
 																	bool signedDistances,
 																	bool flipTriangleNormals/*=false*/,
 																	bool multiThread/*=false*/,
@@ -1307,11 +1309,11 @@ int DistanceComputationTools::computeCloud2MeshDistanceWithOctree(	OctreeAndMesh
 				octree->getCellPos(pCodeAndIndex->theCode, octreeLevel, cellPos, true);
 				cellPos -= intersection->minFillIndexes;
 
-				//get the Chamfer distance
-				int dist = intersection->distanceTransform->getValue(cellPos);
+				//get the Distance Transform distance
+				unsigned squareDist = intersection->distanceTransform->getValue(cellPos);
 
-				//assign the (Chamfer) distance to all points inside this cell
-				ScalarType maxRadius = static_cast<ScalarType>(dist) / 3 * cellLength;
+				//assign the distance to all points inside this cell
+				ScalarType maxRadius = sqrt(static_cast<ScalarType>(squareDist)) * cellLength;
 
 				unsigned count = Yk.size();
 				for (unsigned j = 0; j < count; ++j)
@@ -1391,8 +1393,8 @@ int DistanceComputationTools::computeCloud2MeshDistanceWithOctree(	OctreeAndMesh
 			int dist = 0;
 			if (intersection->distanceTransform)
 			{
-				unsigned short chamferDist = intersection->distanceTransform->getValue(startPos);
-				maxRadius = static_cast<ScalarType>(chamferDist) / 3 * cellLength;
+				unsigned squareDist = intersection->distanceTransform->getValue(startPos);
+				maxRadius = sqrt(static_cast<ScalarType>(squareDist)) * cellLength;
 
 				//if (boundedSearch)  //should always be true if we are here!
 				{
@@ -1425,7 +1427,7 @@ int DistanceComputationTools::computeCloud2MeshDistanceWithOctree(	OctreeAndMesh
 			}
 
 			//boundedSearch: compute the accurate distance below 'maxSearchDist'
-			//and use the approximate (Chamfer) distances above
+			//and use the Distance Transform above
 			if (boundedSearch)
 			{
 				//no need to look farther than 'maxNeighbourhoodLength'
@@ -1712,7 +1714,7 @@ inline void applySqrtToPointDist(const CCVector3 &aPoint, ScalarType& aScalarVal
 
 int DistanceComputationTools::computeCloud2MeshDistance(	GenericIndexedCloudPersist* pointCloud,
 															GenericIndexedMesh* mesh,
-															uchar octreeLevel,
+															unsigned char octreeLevel,
 															ScalarType maxSearchDist,
 															bool useDistanceMap/*=false*/,
 															bool signedDistances/*=false*/,
@@ -1728,7 +1730,7 @@ int DistanceComputationTools::computeCloud2MeshDistance(	GenericIndexedCloudPers
 		return -2;
 	}
 
-	//signed distances are incompatible with Chamfer approximation
+	//signed distances are incompatible with Distance Transform based approximation
 	if (signedDistances)
 	{
 		useDistanceMap = false;
@@ -1744,7 +1746,7 @@ int DistanceComputationTools::computeCloud2MeshDistance(	GenericIndexedCloudPers
 		mesh->getBoundingBox(meshMinBB,meshMaxBB);
 
 		//max bounding-box (non-cubical)
-		for (uchar k=0; k<3; ++k)
+		for (unsigned char k=0; k<3; ++k)
 		{
 			minBB.u[k] = std::min(meshMinBB.u[k],cloudMinBB.u[k]);
 			maxBB.u[k] = std::max(meshMaxBB.u[k],cloudMaxBB.u[k]);
@@ -1770,7 +1772,7 @@ int DistanceComputationTools::computeCloud2MeshDistance(	GenericIndexedCloudPers
 		//check the input octree dimensions
 		const CCVector3& theOctreeMins = octree->getOctreeMins();
 		const CCVector3& theOctreeMaxs = octree->getOctreeMaxs();
-		for (uchar k=0; k<3; ++k)
+		for (unsigned char k=0; k<3; ++k)
 		{
 			if (	theOctreeMins.u[k] != minCubifiedBB.u[k]
 				||	theOctreeMaxs.u[k] != maxCubifiedBB.u[k] )
@@ -1799,7 +1801,7 @@ int DistanceComputationTools::computeCloud2MeshDistance(	GenericIndexedCloudPers
 	//we compute grid occupancy ... and we deduce the grid dimensions
 	Tuple3ui gridSize;
 	{
-		for (uchar k=0; k<3; ++k)
+		for (unsigned char k=0; k<3; ++k)
 		{
 			intersection.minFillIndexes.u[k] = static_cast<int>(floor((minBB.u[k]-minCubifiedBB.u[k])/cellSize));
 			intersection.maxFillIndexes.u[k] = static_cast<int>(floor((maxBB.u[k]-minCubifiedBB.u[k])/cellSize));
@@ -1819,21 +1821,21 @@ int DistanceComputationTools::computeCloud2MeshDistance(	GenericIndexedCloudPers
 	}
 	else
 	{
-		//we only compute approximate (Chamfer) distances
+		//we only compute approximate distances
 		multiThread = false; //not necessary/supported
 	}
 
 	//if the user (or the current cloud/mesh configuration) requires that we use a Distance Transform
 	if (useDistanceMap)
 	{
-		intersection.distanceTransform = new ChamferDistanceTransform;
-		if ( !intersection.distanceTransform || !intersection.distanceTransform->init(gridSize))
+		intersection.distanceTransform = new SaitoSquaredDistanceTransform;
+		if ( !intersection.distanceTransform || !intersection.distanceTransform->initGrid(gridSize))
 		{
 			return -5;
 		}
 	}
 
-	//INTERSECT THE OCTREE WITH THE MAILLAGE
+	//INTERSECT THE OCTREE WITH THE MESH
 	int result = intersectMeshWithOctree(&intersection,octreeLevel,progressCb);
 	if (result < 0)
 	{
@@ -1847,7 +1849,7 @@ int DistanceComputationTools::computeCloud2MeshDistance(	GenericIndexedCloudPers
     //acceleration by approximating the distance
 	if (useDistanceMap && intersection.distanceTransform)
 	{
-        intersection.distanceTransform->propagateDistance(CHAMFER_345, progressCb);
+        intersection.distanceTransform->propagateDistance(progressCb);
 	}
 
 	//WE CAN EVENTUALLY COMPUTE THE DISTANCES!
@@ -2161,7 +2163,7 @@ ScalarType DistanceComputationTools::ComputeCloud2PlaneRobustMax(	GenericCloud* 
 
 		if (pos < tailSize)
 		{
-			tail[++pos] = d;
+			tail[pos++] = d;
 		}
 		else if (tail.back() < d)
 		{
@@ -2241,7 +2243,7 @@ ScalarType DistanceComputationTools::ComputeCloud2PlaneDistance(CCLib::GenericCl
 	}
 }
 
-bool DistanceComputationTools::computeGeodesicDistances(GenericIndexedCloudPersist* cloud, unsigned seedPointIndex, uchar octreeLevel, GenericProgressCallback* progressCb)
+bool DistanceComputationTools::computeGeodesicDistances(GenericIndexedCloudPersist* cloud, unsigned seedPointIndex, unsigned char octreeLevel, GenericProgressCallback* progressCb)
 {
 	assert(cloud);
 
@@ -2315,10 +2317,9 @@ int DistanceComputationTools::diff(	GenericIndexedCloudPersist* comparedCloud,
 	return 0;
 }
 
-int DistanceComputationTools::computeApproxCloud2CloudDistance(	CC_CHAMFER_DISTANCE_TYPE cType,
-																GenericIndexedCloudPersist* comparedCloud,
+int DistanceComputationTools::computeApproxCloud2CloudDistance(	GenericIndexedCloudPersist* comparedCloud,
 																GenericIndexedCloudPersist* referenceCloud,
-																uchar octreeLevel,
+																unsigned char octreeLevel,
 																PointCoordinateType maxSearchDist/*=-PC_ONE*/,
 																GenericProgressCallback* progressCb/*=0*/,
 																DgmOctree* compOctree/*=0*/,
@@ -2340,11 +2341,11 @@ int DistanceComputationTools::computeApproxCloud2CloudDistance(	CC_CHAMFER_DISTA
 	const int* maxIndexesB = octreeB->getMaxFillIndexes(octreeLevel);
 
 	Tuple3i minIndexes(	std::min(minIndexesA[0],minIndexesB[0]),
-								std::min(minIndexesA[1],minIndexesB[1]),
-								std::min(minIndexesA[2],minIndexesB[2]) );
+						std::min(minIndexesA[1],minIndexesB[1]),
+						std::min(minIndexesA[2],minIndexesB[2]) );
 	Tuple3i maxIndexes(	std::max(maxIndexesA[0],maxIndexesB[0]),
-								std::max(maxIndexesA[1],maxIndexesB[1]),
-								std::max(maxIndexesA[2],maxIndexesB[2]) );
+						std::max(maxIndexesA[1],maxIndexesB[1]),
+						std::max(maxIndexesA[2],maxIndexesB[2]) );
 	
 	Tuple3ui boxSize(	static_cast<unsigned>(maxIndexes.x - minIndexes.x + 1),
 						static_cast<unsigned>(maxIndexes.y - minIndexes.y + 1),
@@ -2366,11 +2367,11 @@ int DistanceComputationTools::computeApproxCloud2CloudDistance(	CC_CHAMFER_DISTA
 
 	int result = 0;
 
-	//instantiate the Chamfer grid
-	ChamferDistanceTransform chamferGrid;
-	if (chamferGrid.init(boxSize))
+	//instantiate the Distance Transform grid
+	SaitoSquaredDistanceTransform dtGrid;
+	if (dtGrid.initGrid(boxSize))
 	{
-		//project the (filled) cells of octree B in the Chamfer grid
+		//project the (filled) cells of octree B in the DT grid
 		{
 			DgmOctree::cellCodesContainer theCodes;
 			octreeB->getCellCodes(octreeLevel,theCodes,true);
@@ -2382,18 +2383,16 @@ int DistanceComputationTools::computeApproxCloud2CloudDistance(	CC_CHAMFER_DISTA
 				Tuple3i cellPos;
 				octreeB->getCellPos(theCode,octreeLevel,cellPos,true);
 				cellPos -= minIndexes;
-				chamferGrid.setValue(cellPos,0);
+				dtGrid.setValue(cellPos,1);
 			}
 		}
 
-		//propagate the Chamfer distance over the grid
-		chamferGrid.propagateDistance(cType,progressCb);
+		//propagate the Distance Transform over the grid
+		dtGrid.propagateDistance(progressCb);
 
-		//eventually get the (Chamfer) distance for each cell of octree A
+		//eventually get the approx. distance for each cell of octree A
 		//and assign it to the points inside
 		ScalarType cellSize = static_cast<ScalarType>(octreeA->getCellSize(octreeLevel));
-		if (cType == CHAMFER_345)
-			cellSize /= 3;
 
 		DgmOctree::cellIndexesContainer theIndexes;
 		if (!octreeA->getCellIndexes(octreeLevel,theIndexes))
@@ -2406,7 +2405,7 @@ int DistanceComputationTools::computeApproxCloud2CloudDistance(	CC_CHAMFER_DISTA
 			return -5;
 		}
 
-		int maxDi = 0;
+		ScalarType maxD = 0;
 		ReferenceCloud Yk(octreeA->associatedCloud());
 
 		while (!theIndexes.empty())
@@ -2417,10 +2416,10 @@ int DistanceComputationTools::computeApproxCloud2CloudDistance(	CC_CHAMFER_DISTA
 			Tuple3i cellPos;
 			octreeA->getCellPos(octreeA->getCellCode(theIndex),octreeLevel,cellPos,false);
 			cellPos -= minIndexes;
-			int di = static_cast<int>(chamferGrid.getValue(cellPos));
-			if (di > maxDi)
-				maxDi = di;
-			ScalarType d = static_cast<ScalarType>(di) * cellSize;
+			unsigned di = dtGrid.getValue(cellPos);
+			ScalarType d = sqrt(static_cast<ScalarType>(di)) * cellSize;
+			if (d > maxD)
+				maxD = d;
 			
 			//the maximum distance is 'maxSearchDist' (if defined)
 			if (maxSearchDist < 0 || d < maxSearchDist)
@@ -2431,12 +2430,9 @@ int DistanceComputationTools::computeApproxCloud2CloudDistance(	CC_CHAMFER_DISTA
 			}
 		}
 
-		if (cType == CHAMFER_345)
-			maxDi /= 3;
-
-		result = maxDi;
+		result = static_cast<int>(maxD);
 	}
-	else //Chamfer grid init failed
+	else //DT grid init failed
 	{
 		result = -4;
 	}

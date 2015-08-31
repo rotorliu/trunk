@@ -25,7 +25,7 @@
 
 //*********** OPENGL TEXTURES ***********//
 
-void ccGLUtils::DisplayTexture2DPosition(GLuint tex, int x, int y, int w, int h, uchar alpha/*=255*/)
+void ccGLUtils::DisplayTexture2DPosition(GLuint tex, int x, int y, int w, int h, unsigned char alpha/*=255*/)
 {
 	glEnable(GL_TEXTURE_2D);
 	glBindTexture(GL_TEXTURE_2D, tex);
@@ -46,7 +46,7 @@ void ccGLUtils::DisplayTexture2DPosition(GLuint tex, int x, int y, int w, int h,
 	glDisable(GL_TEXTURE_2D);
 }
 
-void ccGLUtils::DisplayTexture2D(GLuint tex, int w, int h, uchar alpha/*=255*/)
+void ccGLUtils::DisplayTexture2D(GLuint tex, int w, int h, unsigned char alpha/*=255*/)
 {
 	glEnable(GL_TEXTURE_2D);
 	glBindTexture(GL_TEXTURE_2D, tex);
@@ -123,7 +123,7 @@ ccGLMatrixd ccGLUtils::GenerateViewMat(CC_VIEW_ORIENTATION orientation)
 		break;
 	}
 
-	return ccGLMatrixd::LookAt(eye,center,top);
+	return ccGLMatrixd::FromViewDirAndUpDir(center-eye,top);
 }
 
 bool ccGLUtils::CatchGLError(const char* context)

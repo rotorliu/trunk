@@ -144,6 +144,7 @@ ccGLWindow::ccGLWindow(	QWidget *parent,
 	, m_glWidth(0)
 	, m_glHeight(0)
 	, m_LODEnabled(true)
+	, m_LODAutoDisable(false)
 	, m_shouldBeRefreshed(false)
 	, m_mouseMoved(false)
 	, m_mouseButtonPressed(false)
@@ -185,6 +186,7 @@ ccGLWindow::ccGLWindow(	QWidget *parent,
 	, m_LODPendingRefresh(false)
 	, m_touchInProgress(false)
 	, m_touchBaseDist(0)
+	, m_scheduledFullRedrawTime(0)
 {
 	//GL window title
 	setWindowTitle(QString("3D View %1").arg(m_uniqueID));
@@ -267,7 +269,9 @@ ccGLWindow::ccGLWindow(	QWidget *parent,
 			displayNewMessage("Warning: sun light is OFF",ccGLWindow::LOWER_LEFT_MESSAGE,false,2,SUN_LIGHT_STATE_MESSAGE);
 	}
 
-	connect(this, SIGNAL(itemPickedFast(int,int,int,int)), this, SLOT(onItemPickedFast(int,int,int,int)), Qt::DirectConnection);
+	//singal/slot connections
+	connect(this,				SIGNAL(itemPickedFast(int,int,int,int)),	this, SLOT(onItemPickedFast(int,int,int,int)), Qt::DirectConnection);
+	connect(&m_scheduleTimer,	SIGNAL(timeout()),							this, SLOT(checkScheduledRedraw()));
 
 #ifdef THREADED_GL_WIDGET
 	setAutoBufferSwap(false);
@@ -282,6 +286,8 @@ ccGLWindow::ccGLWindow(	QWidget *parent,
 
 ccGLWindow::~ccGLWindow()
 {
+	cancelScheduledRedraw();
+
 #ifdef THREADED_GL_WIDGET
 	if (m_renderingThread)
 		m_renderingThread->stop();
@@ -902,7 +908,7 @@ void ccGLWindow::startFrameRateTest()
 						true,
 						3600);
 
-	disableLOD();
+	stopLODCycle();
 
 	//let's start
 	s_frameRateCurrentFrame = 0;
@@ -1129,7 +1135,7 @@ void ccGLWindow::redraw(bool only2D/*=false*/)
 		//reset current LOD cycle
 		m_LODPendingIgnore = true;
 		m_LODPendingRefresh = false;
-		disableLOD();
+		stopLODCycle();
 	}
 	
 	if (!only2D)
@@ -1167,6 +1173,12 @@ void ccGLWindow::paint()
 {
 #endif
 	qint64 startTime_ms = m_LODInProgress ? m_timer.elapsed() : 0;
+
+	if (m_scheduledFullRedrawTime)
+	{
+		//scheduled redraw is (almost) done
+		cancelScheduledRedraw();
+	}
 
 	bool doDraw3D = (	!m_fbo
 					||	(	(m_alwaysUseFBO && m_updateFBO)
@@ -1662,12 +1674,18 @@ void ccGLWindow::draw3D(CC_DRAW_CONTEXT& CONTEXT, bool doDrawCross)
 		else
 		{
 			//we reached the final level
-			disableLOD();
+			stopLODCycle();
+
+			if (m_LODAutoDisable)
+			{
+				setLODEnabled(false);
+			}
+
 		}
 	}
 }
 
-void ccGLWindow::disableLOD()
+void ccGLWindow::stopLODCycle()
 {
 	//reset LOD rendering (if any)
 	m_currentLODLevel = 0;
@@ -2928,7 +2946,7 @@ void ccGLWindow::mouseMoveEvent(QMouseEvent *event)
 
 	int dx = x - m_lastMousePos.x();
 	int dy = y - m_lastMousePos.y();
-	setLODEnabled(true);
+	setLODEnabled(true, false);
 
 	if ((event->buttons() & Qt::RightButton)
 #ifdef CC_MAC_OS
@@ -3150,7 +3168,7 @@ void ccGLWindow::mouseReleaseEvent(QMouseEvent *event)
 {
 	bool mouseHasMoved = m_mouseMoved;
 	bool acceptEvent = false;
-	setLODEnabled(false);
+	setLODEnabled(false, false);
 
 	//reset to default state
 	m_mouseButtonPressed = false;
@@ -3233,41 +3251,58 @@ void ccGLWindow::mouseReleaseEvent(QMouseEvent *event)
 				int x = event->x();
 				int y = event->y();
 
-				//specific case: interaction with item(s) such as labels, etc.
-				//DGM TODO: to activate only if some items take left clicks into account!
-				/*if (!m_activeItems.empty())
-				{
-					for (std::list<ccInteractor*>::iterator it=m_activeItems.begin(); it!=m_activeItems.end(); ++it)
-					if ((*it)->acceptClick(x,y,Qt::LeftButton))
-					{
-						event->accept();
-						redraw();
-						return;
-					}
-				}
-				//*/
-
 				//first test if the user has clicked on a particular item on the screen
 				if (processClickableItems(x,y))
 				{
 					acceptEvent = true;
 				}
-				//otheriwse perform OpenGL picking
-				else if (m_pickingMode != NO_PICKING)
+
+				if (!acceptEvent && m_pickingMode != NO_PICKING)
 				{
-					PICKING_MODE pickingMode = m_pickingMode;
+					//specific case: label selection
+					updateActiveItemsList(event->x(), event->y(), false);
+					if (!m_activeItems.empty())
+					{
+						if (m_activeItems.size() == 1)
+						{
+							ccInteractor* pickedObj = m_activeItems.front();
+							cc2DLabel* label = dynamic_cast<cc2DLabel*>(pickedObj);
+							if (label && !label->isSelected())
+							{
+								emit entitySelectionChanged(label->getUniqueID());
+								QApplication::processEvents();
+							}
+						}
 
-					//shift+click = point/triangle picking
-					if (pickingMode == ENTITY_PICKING && (QApplication::keyboardModifiers() & Qt::ShiftModifier))
-						pickingMode = LABEL_PICKING;
+						//interaction with item(s) such as labels, etc.
+						//DGM TODO: to activate only if some items take left clicks into account!
+						//for (std::list<ccInteractor*>::iterator it=m_activeItems.begin(); it!=m_activeItems.end(); ++it)
+						//if ((*it)->acceptClick(x,y,Qt::LeftButton))
+						//{
+						//	event->accept();
+						//	redraw();
+						//	return;
+						//}
 
-					PickingParameters params(pickingMode,event->x(),event->y());
-					startPicking(params);
+						acceptEvent = true;
+					}
+					else
+					{
+						//perform standard picking
+						PICKING_MODE pickingMode = m_pickingMode;
 
-					//we also spread the news (if anyone is interested ;)
-					emit leftButtonClicked(event->x(), event->y());
+						//shift+click = point/triangle picking
+						if (pickingMode == ENTITY_PICKING && (QApplication::keyboardModifiers() & Qt::ShiftModifier))
+							pickingMode = LABEL_PICKING;
 
-					acceptEvent = true;
+						PickingParameters params(pickingMode,event->x(),event->y());
+						startPicking(params);
+
+						//we also spread the news (if anyone is interested ;)
+						emit leftButtonClicked(event->x(), event->y());
+
+						acceptEvent = true;
+					}
 				}
 			}
 		}
@@ -3324,7 +3359,10 @@ void ccGLWindow::onWheelEvent(float wheelDelta_deg)
 		updateZoom(zoomFactor);
 	}
 
+	setLODEnabled(true, true);
 	redraw();
+
+	//scheduleFullRedraw(1000);
 }
 
 void ccGLWindow::startPicking(PickingParameters& params)
@@ -4513,6 +4551,32 @@ bool ccGLWindow::renderToFile(	QString filename,
 	if (filename.isEmpty() || zoomFactor < 1.0e-2f)
 		return false;
 
+	QImage output = renderToImage(zoomFactor, dontScaleFeatures, renderOverlayItems);
+
+	if (output.isNull())
+	{
+		//an error occurred (message should have already been issued!)
+		return false;
+	}
+
+	bool success = output.save(filename);
+	if (success)
+	{
+		ccLog::Print(QString("[Snapshot] File '%1' saved! (%2 x %3 pixels)").arg(filename).arg(output.width()).arg(output.height()));
+	}
+	else
+	{
+		ccLog::Print(QString("[Snapshot] Failed to save file '%1'!").arg(filename));
+	}
+
+	return success;
+}
+
+QImage ccGLWindow::renderToImage(	float zoomFactor/*=1.0*/,
+									bool dontScaleFeatures/*=false*/,
+									bool renderOverlayItems/*=false*/,
+									bool silent/*=false*/)
+{
 	//current window size (in pixels)
 	int Wp = static_cast<int>(width() * zoomFactor);
 	int Hp = static_cast<int>(height() * zoomFactor);
@@ -4521,8 +4585,9 @@ bool ccGLWindow::renderToFile(	QString filename,
 	GLubyte* data = output.bits();
 	if (!data)
 	{
-		ccLog::Error("[ccGLWindow::renderToFile] Not enough memory!");
-		return false;
+		if (!silent)
+			ccLog::Error("Not enough memory!");
+		return QImage();
 	}
 
 	m_glWidth = Wp;
@@ -4553,10 +4618,11 @@ bool ccGLWindow::renderToFile(	QString filename,
 
 	//setDisplayParameters(displayParams,true);
 
-	bool result = false;
+	QImage outputImage;
 	if (m_fbo)
 	{
-		ccLog::Print("[Render screen via FBO]");
+		if (!silent)
+			ccLog::Print("[Render screen via FBO]");
 
 		ccFrameBufferObject* fbo = 0;
 		ccGlFilter* filter = 0;
@@ -4573,7 +4639,8 @@ bool ccGLWindow::renderToFile(	QString filename,
 							&&	fbo->initDepth(GL_CLAMP_TO_BORDER,GL_DEPTH_COMPONENT32,GL_NEAREST,GL_TEXTURE_2D) );
 			if (!success)
 			{
-				ccLog::Error("[FBO] Initialization failed! (not enough memory?)");
+				if (!silent)
+					ccLog::Error("[FBO] Initialization failed! (not enough memory?)");
 				delete fbo;
 				fbo = 0;
 			}
@@ -4601,7 +4668,8 @@ bool ccGLWindow::renderToFile(	QString filename,
 				QString error;
 				if (!m_activeGLFilter->init(Wp,Hp,shadersPath,error))
 				{
-					ccLog::Error(QString("[GL Filter] GL filter can't be used during rendering: %1").arg(error));
+					if (!silent)
+						ccLog::Error(QString("[GL Filter] GL filter can't be used during rendering: %1").arg(error));
 				}
 				else
 				{
@@ -4618,7 +4686,7 @@ bool ccGLWindow::renderToFile(	QString filename,
 			CONTEXT.renderZoom = zoomFactor;
 
 			//just to be sure
-			disableLOD();
+			stopLODCycle();
 
 			//enable the FBO
 			fbo->start();
@@ -4729,7 +4797,7 @@ bool ccGLWindow::renderToFile(	QString filename,
 			//resizeGL(width(),height());
 			glViewport(0,0,width(),height());
 
-			result = output.save(filename);
+			outputImage = output;
 
 			//updateZoom(1.0/zoomFactor);
 		}
@@ -4738,21 +4806,24 @@ bool ccGLWindow::renderToFile(	QString filename,
 	}
 	else if (m_activeShader)
 	{
-		ccLog::Error("Screen capture with shader not supported!");
+		if (!silent)
+			ccLog::Error("Screen capture with shader not supported!");
 	}
 	//if no shader or fbo --> we grab screen directly
 	else
 	{
-		ccLog::Print("[Render screen via QT pixmap]");
+		if (!silent)
+			ccLog::Print("[Render screen via QT pixmap]");
 
 		QPixmap capture = renderPixmap(Wp,Hp);
 		if (capture.width()>0 && capture.height()>0)
 		{
-			result = capture.save(filename);
+			outputImage = capture.toImage();
 		}
 		else
 		{
-			ccLog::Error("Direct screen capture failed! (not enough memory?)");
+			if (!silent)
+				ccLog::Error("Direct screen capture failed! (not enough memory?)");
 		}
 	}
 
@@ -4767,12 +4838,7 @@ bool ccGLWindow::renderToFile(	QString filename,
 	m_captureMode.zoomFactor = 1.0f;
 	setFontPointSize(getFontPointSize());
 
-	if (result)
-		ccLog::Print(QString("[Snapshot] File '%1' saved! (%2 x %3 pixels)").arg(filename).arg(Wp).arg(Hp));
-	else
-		ccLog::Print(QString("[Snapshot] Failed to save file '%1'!").arg(filename));
-
-	return true;
+	return outputImage;
 }
 
 void ccGLWindow::removeFBO()
@@ -5040,4 +5106,28 @@ CCVector3 ccGLWindow::backprojectPointOnTriangle(	const CCVector2i& P2D,
 
 	return CCVector3::fromArray(G);
 
+}
+
+void ccGLWindow::checkScheduledRedraw()
+{
+	if (m_scheduledFullRedrawTime && m_timer.elapsed() > m_scheduledFullRedrawTime)
+	{
+		redraw();
+	}
+}
+
+void ccGLWindow::cancelScheduledRedraw()
+{
+	m_scheduledFullRedrawTime = 0;
+	m_scheduleTimer.stop();
+}
+
+void ccGLWindow::scheduleFullRedraw(unsigned maxDelay_ms)
+{
+	m_scheduledFullRedrawTime = m_timer.elapsed() + maxDelay_ms;
+	
+	if (!m_scheduleTimer.isActive())
+	{
+		m_scheduleTimer.start(500);
+	}
 }

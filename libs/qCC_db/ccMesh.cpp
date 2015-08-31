@@ -473,17 +473,25 @@ void ccMesh::applyGLTransformation(const ccGLMatrix& trans)
 	//transparent call
 	ccGenericMesh::applyGLTransformation(trans);
 
-	//vertices should be handled another way!
+	//we take care of per-triangle normals
+	//(vertices and per-vertex normals should be taken care of by the recursive call)
+	transformTriNormals(trans);
+}
 
+void ccMesh::transformTriNormals(const ccGLMatrix& trans)
+{
     //we must take care of the triangle normals!
 	if (m_triNormals && (!getParent() || !getParent()->isKindOf(CC_TYPES::MESH)))
     {
         bool recoded = false;
 
-        //if there is more triangle normals than the size of the compressed
-		//normals array, we recompress the array instead of recompressing each normal
 		unsigned numTriNormals = m_triNormals->currentSize();
-        if (numTriNormals>ccNormalVectors::GetNumberOfVectors())
+
+#if 0 //no use to use memory for this!
+
+        //if there are more triangle normals than the size of the compressed
+		//normals array, we recompress the array instead of recompressing each normal
+        if (numTriNormals > ccNormalVectors::GetNumberOfVectors())
         {
             NormsIndexesTableType* newNorms = new NormsIndexesTableType;
             if (newNorms->reserve(ccNormalVectors::GetNumberOfVectors()))
@@ -515,12 +523,12 @@ void ccMesh::applyGLTransformation(const ccGLMatrix& trans)
 			newNorms = 0;
         }
 
-        //if there is less triangle normals than the compressed normals array size
+        //if there are less triangle normals than the compressed normals array size
         //(or if there is not enough memory to instantiate the temporary array),
 		//we recompress each normal ...
         if (!recoded)
+#endif
         {
-            //on recode direct chaque normale
             m_triNormals->placeIteratorAtBegining();
             for (unsigned i=0; i<numTriNormals; i++)
             {
@@ -531,10 +539,6 @@ void ccMesh::applyGLTransformation(const ccGLMatrix& trans)
                 m_triNormals->forwardIterator();
             }
         }
-	}
-	else
-	{
-		//TODO: process failed!
 	}
 }
 
@@ -590,7 +594,7 @@ bool ccMesh::laplacianSmooth(	unsigned nbIteration,
 	}
 
 	//repeat Laplacian smoothing iterations
-	for(unsigned iter = 0; iter < nbIteration; iter++)
+	for (unsigned iter = 0; iter < nbIteration; iter++)
 	{
 		verticesDisplacement->fill(0);
 
@@ -1237,7 +1241,7 @@ unsigned ccMesh::size() const
 	return m_triVertIndexes->currentSize();
 }
 
-unsigned ccMesh::maxSize() const
+unsigned ccMesh::capacity() const
 {
 	return m_triVertIndexes->capacity();
 }
@@ -1329,6 +1333,13 @@ ccBBox ccMesh::getOwnBB(bool withGLFeatures/*=false*/)
 	refreshBB();
 
 	return m_bBox;
+}
+
+const ccGLMatrix& ccMesh::getGLTransformationHistory() const
+{
+	//DGM: it may happen that the vertices transformation history matrix is not the same as the mesh
+	//(if applyGLTransformation is called directly on the vertices). Therefore we prefer the cloud's by default.
+	return m_associatedCloud ? m_associatedCloud->getGLTransformationHistory() : m_glTransHistory;
 }
 
 //specific methods
@@ -3364,9 +3375,9 @@ bool ccMesh::pushSubdivide(/*PointCoordinateType maxArea, */unsigned indexA, uns
 	else
 	{
 		//we will add one triangle, so we must be sure to have enough memory
-		if (size() == maxSize())
+		if (size() == capacity())
 		{
-			if (!reserve(size()+3*s_defaultSubdivideGrowRate))
+			if (!reserve(size() + 3*s_defaultSubdivideGrowRate))
 			{
 				ccLog::Error("[ccMesh::pushSubdivide] Not enough memory!");
 				return false;
@@ -3579,10 +3590,8 @@ ccMesh* ccMesh::subdivide(PointCoordinateType maxArea) const
 
 	s_alreadyCreatedVertices.clear();
 
-	if (resultMesh->size() < resultMesh->maxSize())
-		resultMesh->resize(resultMesh->size());
-	if (resultVertices->size() < resultVertices->capacity())
-		resultVertices->resize(resultVertices->size());
+	resultMesh->shrinkToFit();
+	resultVertices->shrinkToFit();
 
 	//we import from the original mesh... what we can
 	if (hasNormals())
